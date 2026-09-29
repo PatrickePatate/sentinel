@@ -14,11 +14,11 @@ class AgentRunList extends SharpEntityList
     protected function buildList(EntityListFieldsContainer $fields): void
     {
         $fields
-            ->addField(EntityListField::make('created_at')->setLabel('Date')->setSortable())
-            ->addField(EntityListField::make('machine:name')->setLabel('Machine'))
-            ->addField(EntityListField::make('objective')->setLabel('Objective'))
-            ->addField(EntityListField::make('provider')->setLabel('Provider'))
-            ->addField(EntityListField::make('status')->setLabel('Status'));
+            ->addField(EntityListField::make('created_at')->setLabel('Date')->setHtml(false)->setSortable())
+            ->addField(EntityListField::make('machine:name')->setLabel('Machine')->setHtml(false))
+            ->addField(EntityListField::make('objective')->setLabel('Objective')->setHtml(false))
+            ->addField(EntityListField::make('provider')->setLabel('Provider')->setHtml(false))
+            ->addField(EntityListField::make('status')->setLabel('Status')->setHtml(false));
     }
 
     public function buildListConfig(): void

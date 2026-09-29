@@ -8,6 +8,13 @@ return [
         'latency_ms' => (int) env('SENTINEL_FAKE_LATENCY_MS', 400),
     ],
 
+    'limits' => [
+        // Cost and prompt-injection persistence: bound what is replayed to the model and how often it is called.
+        'chat_history_messages' => 20,
+        'chat_messages_per_minute' => 8,
+        'scans_per_hour_per_user' => 6,
+    ],
+
     'agent' => [
         'provider' => env('SENTINEL_AI_PROVIDER', 'anthropic'),
         'model' => env('SENTINEL_AI_MODEL'),
@@ -21,6 +28,7 @@ return [
         'min_reversible' => 0.8,
         'min_matches_objective' => 0.8,
         'max_autonomous_actions_per_run' => 3,
+        'pending_ttl_hours' => 24,
     ],
 
     'fail2ban' => [

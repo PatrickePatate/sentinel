@@ -15,12 +15,12 @@ class PendingActionShow extends SharpShow
     protected function buildShowFields(FieldsContainer $showFields): void
     {
         $showFields
-            ->addField(SharpShowTextField::make('machine:name')->setLabel('Machine'))
-            ->addField(SharpShowTextField::make('command')->setLabel('Exact command'))
-            ->addField(SharpShowTextField::make('risk')->setLabel('Risk'))
-            ->addField(SharpShowTextField::make('reason')->setLabel('Why it was held'))
-            ->addField(SharpShowTextField::make('status')->setLabel('Status'))
-            ->addField(SharpShowTextField::make('output')->setLabel('Output'));
+            ->addField(SharpShowTextField::make('machine:name')->setLabel('Machine')->setHtml(false))
+            ->addField(SharpShowTextField::make('command')->setLabel('Exact command')->setHtml(false))
+            ->addField(SharpShowTextField::make('risk')->setLabel('Risk')->setHtml(false))
+            ->addField(SharpShowTextField::make('reason')->setLabel('Why it was held')->setHtml(false))
+            ->addField(SharpShowTextField::make('status')->setLabel('Status')->setHtml(false))
+            ->addField(SharpShowTextField::make('output')->setLabel('Output')->setHtml(false));
     }
 
     protected function buildShowLayout(ShowLayout $showLayout): void

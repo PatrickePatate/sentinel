@@ -14,12 +14,12 @@ class PendingActionList extends SharpEntityList
     protected function buildList(EntityListFieldsContainer $fields): void
     {
         $fields
-            ->addField(EntityListField::make('created_at')->setLabel('Date'))
-            ->addField(EntityListField::make('machine:name')->setLabel('Machine'))
-            ->addField(EntityListField::make('command')->setLabel('Command'))
-            ->addField(EntityListField::make('risk')->setLabel('Risk'))
-            ->addField(EntityListField::make('reason')->setLabel('Why held'))
-            ->addField(EntityListField::make('status')->setLabel('Status'));
+            ->addField(EntityListField::make('created_at')->setLabel('Date')->setHtml(false))
+            ->addField(EntityListField::make('machine:name')->setLabel('Machine')->setHtml(false))
+            ->addField(EntityListField::make('command')->setLabel('Command')->setHtml(false))
+            ->addField(EntityListField::make('risk')->setLabel('Risk')->setHtml(false))
+            ->addField(EntityListField::make('reason')->setLabel('Why held')->setHtml(false))
+            ->addField(EntityListField::make('status')->setLabel('Status')->setHtml(false));
     }
 
     public function buildListConfig(): void

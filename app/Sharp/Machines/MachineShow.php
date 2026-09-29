@@ -15,11 +15,11 @@ class MachineShow extends SharpShow
     protected function buildShowFields(FieldsContainer $showFields): void
     {
         $showFields
-            ->addField(SharpShowTextField::make('name')->setLabel('Name'))
-            ->addField(SharpShowTextField::make('address')->setLabel('Address'))
-            ->addField(SharpShowTextField::make('environment')->setLabel('Environment'))
-            ->addField(SharpShowTextField::make('host_key_fingerprint')->setLabel('Pinned host key'))
-            ->addField(SharpShowTextField::make('autonomy')->setLabel('Autonomous low-risk actions'))
+            ->addField(SharpShowTextField::make('name')->setLabel('Name')->setHtml(false))
+            ->addField(SharpShowTextField::make('address')->setLabel('Address')->setHtml(false))
+            ->addField(SharpShowTextField::make('environment')->setLabel('Environment')->setHtml(false))
+            ->addField(SharpShowTextField::make('host_key_fingerprint')->setLabel('Pinned host key')->setHtml(false))
+            ->addField(SharpShowTextField::make('autonomy')->setLabel('Autonomous low-risk actions')->setHtml(false))
             ->addField(SharpShowTextField::make('chat')->setLabel(''));
     }
 

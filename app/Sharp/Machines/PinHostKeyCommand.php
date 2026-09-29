@@ -3,6 +3,7 @@
 namespace App\Sharp\Machines;
 
 use App\Models\Machine;
+use App\Ssh\AuditTrail;
 use App\Ssh\HostKeyFingerprint;
 use Code16\Sharp\EntityList\Commands\InstanceCommand;
 use Code16\Sharp\Form\Fields\SharpFormTextField;
@@ -43,7 +44,7 @@ class PinHostKeyCommand extends InstanceCommand
         }
 
         $machine->update(['host_key_fingerprint' => $actual]);
-        activity('ssh')->performedOn($machine)->event('host_key_pinned')->withProperties(['fingerprint' => $actual])->log('host_key_pinned');
+        app(AuditTrail::class)->record($machine, null, 'host_key_pinned', 'host_key_pinned', ['fingerprint' => $actual]);
 
         return $this->refresh($instanceId);
     }

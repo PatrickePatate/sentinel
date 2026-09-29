@@ -13,11 +13,11 @@ class MachineList extends SharpEntityList
     protected function buildList(EntityListFieldsContainer $fields): void
     {
         $fields
-            ->addField(EntityListField::make('name')->setLabel('Name')->setSortable())
-            ->addField(EntityListField::make('address')->setLabel('Address'))
-            ->addField(EntityListField::make('environment')->setLabel('Environment'))
-            ->addField(EntityListField::make('host_key')->setLabel('Host key'))
-            ->addField(EntityListField::make('autonomy')->setLabel('Autonomy'));
+            ->addField(EntityListField::make('name')->setLabel('Name')->setHtml(false)->setSortable())
+            ->addField(EntityListField::make('address')->setLabel('Address')->setHtml(false))
+            ->addField(EntityListField::make('environment')->setLabel('Environment')->setHtml(false))
+            ->addField(EntityListField::make('host_key')->setLabel('Host key')->setHtml(false))
+            ->addField(EntityListField::make('autonomy')->setLabel('Autonomy')->setHtml(false));
     }
 
     public function buildListConfig(): void

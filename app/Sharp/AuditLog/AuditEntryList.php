@@ -14,11 +14,11 @@ class AuditEntryList extends SharpEntityList
     protected function buildList(EntityListFieldsContainer $fields): void
     {
         $fields
-            ->addField(EntityListField::make('created_at')->setLabel('Date'))
-            ->addField(EntityListField::make('machine')->setLabel('Machine'))
-            ->addField(EntityListField::make('event')->setLabel('Event'))
-            ->addField(EntityListField::make('description')->setLabel('Tool / action'))
-            ->addField(EntityListField::make('detail')->setLabel('Command / reason'));
+            ->addField(EntityListField::make('created_at')->setLabel('Date')->setHtml(false))
+            ->addField(EntityListField::make('machine')->setLabel('Machine')->setHtml(false))
+            ->addField(EntityListField::make('event')->setLabel('Event')->setHtml(false))
+            ->addField(EntityListField::make('description')->setLabel('Tool / action')->setHtml(false))
+            ->addField(EntityListField::make('detail')->setLabel('Command / reason')->setHtml(false));
     }
 
     public function buildListConfig(): void

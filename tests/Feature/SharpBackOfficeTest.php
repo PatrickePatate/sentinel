@@ -24,7 +24,7 @@ use Tests\TestCase;
 uses(TestCase::class, RefreshDatabase::class, SharpAssertions::class);
 
 beforeEach(function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(User::factory()->admin()->create());
 });
 
 it('lists machines without exposing secrets', function () {
@@ -91,7 +91,7 @@ it('approves a pending action and runs it', function () {
 
     $pending = PendingAction::create([
         'machine_id' => Machine::factory()->create()->id, 'action' => 'clean_apt_cache', 'arguments' => [],
-        'command' => 'IGNORED', 'risk' => 'low', 'reason' => 'test',
+        'command' => 'apt-get clean 2>&1', 'risk' => 'low', 'reason' => 'test',
     ]);
 
     $this->sharpList(PendingActionEntity::class)

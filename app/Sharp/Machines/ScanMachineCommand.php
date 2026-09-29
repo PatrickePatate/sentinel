@@ -6,6 +6,7 @@ use App\Jobs\RunScan;
 use Code16\Sharp\EntityList\Commands\InstanceCommand;
 use Code16\Sharp\Form\Fields\SharpFormTextareaField;
 use Code16\Sharp\Utils\Fields\FieldsContainer;
+use Illuminate\Support\Facades\RateLimiter;
 
 class ScanMachineCommand extends InstanceCommand
 {
@@ -33,7 +34,15 @@ class ScanMachineCommand extends InstanceCommand
     {
         $this->validate($data, ['objective' => ['required', 'string', 'max:1000']]);
 
-        RunScan::dispatch((int) $instanceId, $data['objective']);
+        $throttleKey = 'scan:'.auth()->id();
+
+        if (RateLimiter::tooManyAttempts($throttleKey, config('sentinel.limits.scans_per_hour_per_user'))) {
+            return $this->info('Scan limit reached for this hour. Try again later.');
+        }
+
+        RateLimiter::hit($throttleKey, 3600);
+
+        RunScan::dispatch((int) $instanceId, $data['objective'], auth()->id());
 
         return $this->info('Scan queued. Follow it in the Scans menu.');
     }

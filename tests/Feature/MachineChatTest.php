@@ -10,7 +10,6 @@ use App\Models\User;
 use App\Sharp\Entities\MachineEntity;
 use Code16\Sharp\Utils\Testing\SharpAssertions;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use Laravel\Ai\Streaming\Events\TextDelta;
 use Livewire\Livewire;
@@ -31,15 +30,22 @@ it('does not serve the chat to guests', function () {
     $this->postJson(route('sentinel.livewire.update'), ['components' => []])->assertRedirect();
 });
 
-it('honours the Sharp viewSharp gate on the chat', function () {
-    Gate::define('viewSharp', fn () => false);
+it('keeps non-admin users out of the chat, its Livewire endpoint and the back-office', function () {
+    $machine = Machine::factory()->create();
     $this->actingAs(User::factory()->create());
 
-    $this->get(route('sentinel.chat', Machine::factory()->create()))->assertRedirect();
+    $this->get(route('sentinel.chat', $machine))->assertRedirect()->assertDontSee($machine->name);
+    $this->postJson(route('sentinel.livewire.update'), ['components' => []])->assertRedirect();
+});
+
+it('never lets is_admin be mass assigned', function () {
+    $user = User::create(['name' => 'x', 'email' => 'x@example.org', 'password' => 'secret', 'is_admin' => true]);
+
+    expect($user->fresh()->is_admin)->toBeFalse();
 });
 
 it('can only be framed by the same origin', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(User::factory()->admin()->create());
 
     $this->get(route('sentinel.chat', Machine::factory()->create()))
         ->assertOk()
@@ -48,7 +54,7 @@ it('can only be framed by the same origin', function () {
 });
 
 it('is embedded as an iframe in the machine show page', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(User::factory()->admin()->create());
     $machine = Machine::factory()->create();
 
     $this->sharpShow(MachineEntity::class, $machine->id)->get()
@@ -57,7 +63,7 @@ it('is embedded as an iframe in the machine show page', function () {
 
 it('answers through the agent and keeps the conversation per user', function () {
     SysadminAgent::fake(['Disk usage is fine.']);
-    $user = User::factory()->create();
+    $user = User::factory()->admin()->create();
     $machine = Machine::factory()->create();
     $this->actingAs($user);
 
@@ -71,13 +77,13 @@ it('answers through the agent and keeps the conversation per user', function () 
     expect(ChatMessage::where('user_id', $user->id)->pluck('role')->all())->toBe(['user', 'assistant'])
         ->and(AgentRun::first()->objective)->toBe('How is the disk?');
 
-    $other = User::factory()->create();
+    $other = User::factory()->admin()->create();
     $this->actingAs($other);
     Livewire::test(MachineChat::class, ['machine' => $machine])->assertDontSee('How is the disk?');
 });
 
 it('validates and escapes messages', function () {
-    $this->actingAs(User::factory()->create());
+    $this->actingAs(User::factory()->admin()->create());
     $machine = Machine::factory()->create();
     ChatMessage::create(['machine_id' => $machine->id, 'user_id' => auth()->id(), 'role' => 'assistant', 'content' => '<script>alert(1)</script>']);
 

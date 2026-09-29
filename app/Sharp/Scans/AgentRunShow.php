@@ -15,10 +15,10 @@ class AgentRunShow extends SharpShow
     protected function buildShowFields(FieldsContainer $showFields): void
     {
         $showFields
-            ->addField(SharpShowTextField::make('machine:name')->setLabel('Machine'))
-            ->addField(SharpShowTextField::make('objective')->setLabel('Objective'))
-            ->addField(SharpShowTextField::make('status')->setLabel('Status'))
-            ->addField(SharpShowTextField::make('report')->setLabel('Report'));
+            ->addField(SharpShowTextField::make('machine:name')->setLabel('Machine')->setHtml(false))
+            ->addField(SharpShowTextField::make('objective')->setLabel('Objective')->setHtml(false))
+            ->addField(SharpShowTextField::make('status')->setLabel('Status')->setHtml(false))
+            ->addField(SharpShowTextField::make('report')->setLabel('Report')->setHtml(false));
     }
 
     protected function buildShowLayout(ShowLayout $showLayout): void

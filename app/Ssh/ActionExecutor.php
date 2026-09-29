@@ -74,12 +74,13 @@ class ActionExecutor
     }
 
     /**
-     * Executes an action a human explicitly approved. The command is re-derived
-     * from the catalog, never taken from the stored row.
+     * Executes an action a human explicitly approved. The command is re-derived from the
+     * catalog (never taken from the stored row) and must be identical to the one the human
+     * reviewed; the pending -> running transition is atomic so it can only run once.
      */
     public function approve(PendingAction $pending): string
     {
-        abort_unless($pending->status === 'pending', 409, 'Action already decided.');
+        $this->claim($pending);
 
         $machine = $pending->machine;
 
@@ -91,7 +92,15 @@ class ActionExecutor
             return 'ERROR: '.$e->getMessage();
         }
 
-        $output = $this->run($machine, $pending->agentRun ?? null, $pending->action, $command, ['approved_pending_action_id' => $pending->id], 'action_approved');
+        if ($command !== $pending->command) {
+            $message = 'The command changed since it was reviewed (configuration updated). Ask the agent to request it again.';
+            $pending->update(['status' => 'stale', 'output' => $message, 'decided_at' => now()]);
+            $this->audit->record($machine, $pending->agentRun, 'action_stale', $pending->action, ['pending_action_id' => $pending->id, 'reviewed' => $pending->command, 'now' => $command]);
+
+            return 'ERROR: '.$message;
+        }
+
+        $output = $this->run($machine, $pending->agentRun, $pending->action, $command, ['approved_pending_action_id' => $pending->id], 'action_approved');
         $pending->update(['status' => str_starts_with($output, 'ERROR') ? 'failed' : 'executed', 'output' => $output, 'decided_at' => now()]);
 
         return $output;
@@ -99,10 +108,28 @@ class ActionExecutor
 
     public function reject(PendingAction $pending): void
     {
-        abort_unless($pending->status === 'pending', 409, 'Action already decided.');
+        $this->claim($pending, 'rejected');
 
-        $pending->update(['status' => 'rejected', 'decided_at' => now()]);
         $this->audit->record($pending->machine, null, 'action_rejected', $pending->action, ['pending_action_id' => $pending->id]);
+    }
+
+    /**
+     * Atomically moves a pending action out of "pending": a double click or two admins
+     * at once cannot both win. Expired requests are closed instead of run.
+     */
+    private function claim(PendingAction $pending, string $to = 'running'): void
+    {
+        $ttl = config('sentinel.gate.pending_ttl_hours');
+
+        PendingAction::whereKey($pending->id)->where('status', 'pending')->where('created_at', '<', now()->subHours($ttl))
+            ->update(['status' => 'expired', 'decided_at' => now()]);
+
+        $claimed = PendingAction::whereKey($pending->id)->where('status', 'pending')
+            ->update(['status' => $to, 'decided_at' => $to === 'rejected' ? now() : null]);
+
+        abort_unless($claimed === 1, 409, 'Action already decided or expired.');
+
+        $pending->refresh();
     }
 
     /** @param array<string, mixed> $context */
