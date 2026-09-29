@@ -1,58 +1,137 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Sentinel
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+**An AI sysadmin that watches your Linux servers over SSH, and cannot run anything you didn't allow.**
 
-## About Laravel
+Sentinel connects to your machines over SSH, runs regular security and health audits with an LLM agent, reports what it finds, and can fix routine problems (restart a service, unban an IP, update a package) through a risk gate that keeps a human in charge of everything that matters.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+It is built with Laravel 13, the Laravel AI SDK, Livewire 4 and [Sharp](https://sharp.code16.fr) for the back office.
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+---
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+## Features
 
-## Learning Laravel
+- **Scheduled audits.** Each machine is scanned on its own schedule. The agent checks services, logs, fail2ban, pending updates and more, then submits a verdict (severity + report).
+- **Live reports.** Follow a scan as it happens, step by step.
+- **Chat with a machine.** Ask the agent questions about a server in plain language.
+- **Corrective actions with a risk gate.**
+  - **Low risk**: may run on its own if autonomy is enabled for the machine *and* a second classifier model agrees.
+  - **Medium risk**: always waits for human approval.
+  - **High risk**: never executed by the agent.
+- **Approvals anywhere.** Pending actions can be approved or rejected in the back office, by mail, from Telegram buttons, or with `php artisan sentinel:pending`.
+- **Full audit trail.** Every command, its output and every decision is logged.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+## Security model
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+Sentinel is designed so that a confused or manipulated model can't damage a server:
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
+- **No raw shell.** The agent can only call named tools from a fixed catalog (`app/Ssh/ToolCatalog.php`, `app/Ssh/ActionCatalog.php`). Arguments are validated, and output size and runtime are bounded.
+- **Least-privilege remote user.** Provisioning creates a user with no password, a restricted SSH key and a `sudoers` policy that only allows the exact commands Sentinel needs.
+- **Source IP pinning.** The deployed key can be restricted to Sentinel's IPs (`SENTINEL_SOURCE_IPS`, IPv4/IPv6/CIDR).
+- **Host key pinning.** Sentinel refuses to connect when the server's host key doesn't match the pinned fingerprint.
+- **Tool output is untrusted.** Tool output is never treated as instructions, and it can't lower the severity of a finding.
+- **Deterministic rules come first.** The model can escalate an action's risk, but it can never unlock one.
+- **Revocation.** `sentinel:revoke` disables a machine immediately. `--purge` removes the remote user and files.
 
-## Agentic Development
+## Requirements
 
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+- PHP 8.3+ with Composer
+- Node.js + npm (to build frontend assets)
+- A database (SQLite works out of the box; MySQL/PostgreSQL are supported)
+- An API key for an LLM provider (OpenAI, OpenRouter, or any provider from `config/ai.php`)
+- Target servers: Linux with systemd and SSH access as root once, to provision
+
+## Installation
 
 ```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+git clone git@github.com:PatrickePatate/sentinel.git
+cd sentinel
+composer install
+npm install && npm run build
+cp .env.example .env
+php artisan key:generate
+php artisan migrate
+php artisan sentinel:admin you@example.com --name="Your Name"
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+Then run the app, a queue worker and the scheduler:
+
+```bash
+php artisan serve
+php artisan queue:work
+php artisan schedule:work   # in production: cron `* * * * * php artisan schedule:run`
+```
+
+The back office is available at `/sharp`.
+
+## Configuration
+
+The main `.env` settings (see `.env.example` for the full list):
+
+| Variable | Purpose |
+| --- | --- |
+| `SENTINEL_AI_PROVIDER` / `SENTINEL_AI_MODEL` | Model used by the agent |
+| `SENTINEL_SCHEDULED_PROVIDER` / `SENTINEL_SCHEDULED_MODEL` | Optional cheaper model for scheduled scans (set both) |
+| `SENTINEL_GATE_PROVIDER` / `SENTINEL_GATE_MODEL` | Classifier model used by the risk gate |
+| `OPENAI_API_KEY`, `OPENROUTER_API_KEY` | Provider credentials |
+| `SENTINEL_TRANSPORT` | `fake` for local development, set to real SSH in production |
+| `SENTINEL_SOURCE_IPS` | Public IPs Sentinel connects from (restricts the key, whitelisted in fail2ban) |
+| `SENTINEL_USE_SUDO` | Run privileged commands through `sudo` |
+| `SENTINEL_RESTARTABLE_SERVICES` | Services the agent may restart |
+| `SENTINEL_RELOADABLE_SERVICES` | Services the agent may reload |
+| `SENTINEL_UPGRADABLE_PACKAGES` | Packages the agent may upgrade |
+
+**Notifications:** mail uses the usual `MAIL_*` settings. Telegram needs a public HTTPS `APP_URL`. Register the webhook from the channel in the back office, or with `php artisan sentinel:telegram-webhook <channel-id>`.
+
+## Adding a machine
+
+1. Create the machine in the back office.
+2. Generate its provisioning script and run it on the server as root:
+   ```bash
+   php artisan sentinel:provision <machine-id> --output=provision.sh
+   ```
+   The script creates the Sentinel user, installs the restricted key and sudoers policy, and prints the host key fingerprints.
+3. Pin the host key:
+   ```bash
+   php artisan sentinel:pin-host-key <machine-id>
+   ```
+4. Check that everything works:
+   ```bash
+   php artisan sentinel:check <machine-id>
+   ```
+5. Run a first scan:
+   ```bash
+   php artisan sentinel:scan <machine-id>
+   ```
+
+## Artisan commands
+
+| Command | Description |
+| --- | --- |
+| `sentinel:admin {email}` | Create or promote an admin user |
+| `sentinel:provision {machine}` | Print or write the provisioning script (`--sudoers` for the policy only) |
+| `sentinel:pin-host-key {machine}` | Pin the server's SSH host key |
+| `sentinel:check {machine}` | Diagnose SSH and authentication problems |
+| `sentinel:scan {machine}` | Run a scan now (`--objective`, `--provider`, `--model`) |
+| `sentinel:scan-due` | Run the scans that are due (scheduled every minute) |
+| `sentinel:pending {id?}` | Review, approve or `--reject` pending actions |
+| `sentinel:revoke {machine}` | Revoke access (`--purge` to clean the server, `--lift` to undo) |
+| `sentinel:telegram-webhook {channel}` | Register a Telegram webhook |
+
+## Development
+
+```bash
+php artisan test      # Pest test suite
+vendor/bin/pint       # code style
+```
+
+Set `SENTINEL_TRANSPORT=fake` to develop without real servers.
 
 ## Contributing
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Issues and pull requests are welcome. For anything touching the security model (tool catalog, risk gate, provisioning), please open an issue first to discuss it.
 
-## Code of Conduct
-
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
-
-## Security Vulnerabilities
-
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+If you find a security vulnerability, **please don't open a public issue**. Report it privately via GitHub's *Report a vulnerability* button on the repository.
 
 ## License
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+Sentinel is released under the [PolyForm Noncommercial License 1.0.0](LICENSE.md). You are free to use, study, modify and share it for any **non-commercial** purpose. Commercial use requires a separate licence from the author.
