@@ -19,6 +19,8 @@ class FakeTransport implements SshTransport
 {
     public function run(Machine $machine, string $command, int $timeoutSeconds): CommandResult
     {
+        $machine->assertActive();
+
         $state = $this->state($machine);
 
         if ($state['unreachable']) {

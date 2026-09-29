@@ -46,7 +46,7 @@ class ProvisionScript
 #!/usr/bin/env bash
 # Sentinel provisioning for "{$machine->name}" - generated, review before running as root.
 # Creates user "{$user}" (no password, SSH key only, restricted) and grants it sudo for a fixed list of
-# commands. Safe to re-run. To revoke: userdel -r {$user}; rm /etc/sudoers.d/sentinel /usr/local/sbin/sentinel-*
+# commands. Safe to re-run. To revoke: php artisan sentinel:revoke <machine>
 set -euo pipefail
 
 [[ \$EUID -eq 0 ]] || { echo "Run as root." >&2; exit 1; }

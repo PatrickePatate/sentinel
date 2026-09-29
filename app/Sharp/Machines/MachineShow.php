@@ -51,7 +51,7 @@ class MachineShow extends SharpShow
             ->setCustomTransformer('address', fn ($value, Machine $m) => "{$m->username}@{$m->host}:{$m->port}")
             ->setCustomTransformer('host_key_fingerprint', fn ($value) => $value ?: 'NOT PINNED — the agent cannot connect')
             ->setCustomTransformer('chat', fn ($value, Machine $m) => '<iframe src="'.route('sentinel.chat', $m, absolute: false).'" title="Chat with the agent" style="width:100%;height:640px;border:1px solid #e5e7eb;border-radius:8px" loading="lazy"></iframe>')
-            ->setCustomTransformer('autonomy', fn ($value, Machine $m) => $m->autonomy_enabled ? 'enabled' : 'off')
+            ->setCustomTransformer('autonomy', fn ($value, Machine $m) => $m->isRevoked() ? 'REVOKED' : ($m->autonomy_enabled ? 'enabled' : 'off'))
             ->transform(Machine::findOrFail($id));
     }
 

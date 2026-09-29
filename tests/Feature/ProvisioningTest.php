@@ -1,13 +1,18 @@
 <?php
 
 use App\Models\Machine;
+use App\Models\PendingAction;
 use App\Ssh\ActionCatalog;
 use App\Ssh\Provisioning\ProvisionScript;
+use App\Ssh\Provisioning\RevokeScript;
 use App\Ssh\Provisioning\SudoersBuilder;
+use App\Ssh\SafeExecutor;
+use App\Ssh\SshTransport;
 use App\Ssh\ToolCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Process;
 use phpseclib3\Crypt\EC;
+use Spatie\Activitylog\Models\Activity;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
@@ -134,3 +139,45 @@ it('validates fail2ban filter payloads in the wrapper before writing anything', 
     'empty line in the middle' => ["^<HOST> x\n\n^<HOST> y", 2],
     'control char' => ["^<HOST> \x01", 2],
 ]);
+
+it('revokes a machine: blocks every SSH path locally, cancels pending actions and audits it', function () {
+    config(['sentinel.transport' => 'fake']);
+    $machine = provisionedMachine();
+    $pending = PendingAction::create([
+        'machine_id' => $machine->id, 'action' => 'clean_apt_cache', 'arguments' => [], 'command' => 'x', 'risk' => 'low', 'reason' => 'r',
+    ]);
+
+    $this->artisan('sentinel:revoke', ['machine' => $machine->id])->assertSuccessful();
+
+    $machine->refresh();
+    expect($machine->isRevoked())->toBeTrue()
+        ->and($machine->autonomy_enabled)->toBeFalsy()
+        ->and($pending->refresh()->status)->toBe('rejected')
+        ->and(Activity::where('event', 'machine_revoked')->count())->toBe(1)
+        ->and(fn () => app(SshTransport::class)->run($machine, 'true', 5))->toThrow(RuntimeException::class, 'revoked');
+
+    $output = app(SafeExecutor::class)->execute($machine, 'disk_usage');
+    expect($output)->toStartWith('ERROR');
+
+    $this->artisan('sentinel:revoke', ['machine' => $machine->id, '--lift' => true])->assertSuccessful();
+    expect($machine->refresh()->isRevoked())->toBeFalse();
+});
+
+it('renders a revoke script that closes the door before killing sessions and is valid bash', function () {
+    $machine = provisionedMachine();
+    $script = app(RevokeScript::class);
+
+    foreach ([false, true] as $purge) {
+        $body = $script->render($machine, $purge);
+        $path = tempnam(sys_get_temp_dir(), 'revoke');
+        file_put_contents($path, $body);
+        expect(Process::run(['bash', '-n', $path])->successful())->toBeTrue();
+        unlink($path);
+    }
+
+    $plain = $script->render($machine);
+    expect(strpos($plain, 'authorized_keys'))->toBeLessThan(strpos($plain, 'terminate-user'))
+        ->and(strpos($plain, '/etc/sudoers.d/sentinel'))->toBeLessThan(strpos($plain, 'pkill'))
+        ->and($plain)->not->toContain('userdel')->not->toContain('fail2ban')
+        ->and($script->render($machine, true))->toContain('userdel -r sentinel');
+});

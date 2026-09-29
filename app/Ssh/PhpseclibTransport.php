@@ -11,6 +11,8 @@ class PhpseclibTransport implements SshTransport
 {
     public function run(Machine $machine, string $command, int $timeoutSeconds): CommandResult
     {
+        $machine->assertActive();
+
         $ssh = new SSH2($machine->host, $machine->port, 10);
         $ssh->setTimeout($timeoutSeconds);
 
