@@ -15,6 +15,11 @@ return [
         'scans_per_hour_per_user' => 6,
     ],
 
+    'provisioning' => [
+        // Unprivileged account Sentinel creates on each machine (and connects as).
+        'user' => env('SENTINEL_AGENT_USER', 'sentinel'),
+    ],
+
     'scheduling' => [
         // Choices offered per machine for autonomous scans (minutes => label). Kept coarse: every scan costs LLM calls.
         'frequencies' => [

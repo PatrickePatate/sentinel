@@ -181,3 +181,18 @@ it('renders a revoke script that closes the door before killing sessions and is 
         ->and($plain)->not->toContain('userdel')->not->toContain('fail2ban')
         ->and($script->render($machine, true))->toContain('userdel -r sentinel');
 });
+
+it('writes the provisioning script of a Sentinel-generated key to a private file, valid bash, with the public half only', function () {
+    $machine = Machine::factory()->create(['username' => 'sentinel', 'private_key' => Machine::generatePrivateKey()]);
+    $path = tempnam(sys_get_temp_dir(), 'prov');
+
+    $this->artisan('sentinel:provision', ['machine' => $machine->id, '--output' => $path, '--from' => '203.0.113.7'])->assertSuccessful();
+
+    $script = file_get_contents($path);
+    expect(Process::run(['bash', '-n', $path])->successful())->toBeTrue()
+        ->and(substr(sprintf('%o', fileperms($path)), -4))->toBe('0700')
+        ->and($script)->toContain($machine->publicKey(), 'restrict,from="203.0.113.7"', 'AllowUsers')
+        ->not->toContain('PRIVATE KEY');
+
+    unlink($path);
+});

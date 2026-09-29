@@ -7,7 +7,6 @@ use Closure;
 use Code16\Sharp\Form\Fields\SharpFormCheckField;
 use Code16\Sharp\Form\Fields\SharpFormNumberField;
 use Code16\Sharp\Form\Fields\SharpFormSelectField;
-use Code16\Sharp\Form\Fields\SharpFormTextareaField;
 use Code16\Sharp\Form\Fields\SharpFormTextField;
 use Code16\Sharp\Form\Layout\FormLayout;
 use Code16\Sharp\Form\Layout\FormLayoutColumn;
@@ -24,14 +23,6 @@ class MachineForm extends SharpForm
             ->addField(SharpFormTextField::make('name')->setLabel('Name')->setMaxLength(100))
             ->addField(SharpFormTextField::make('host')->setLabel('Host')->setMaxLength(255))
             ->addField(SharpFormNumberField::make('port')->setLabel('SSH port')->setMin(1)->setMax(65535))
-            ->addField(SharpFormTextField::make('username')->setLabel('SSH user')->setMaxLength(64))
-            ->addField(
-                SharpFormTextareaField::make('private_key')
-                    ->setLabel('Private key')
-                    ->setHelpMessage('Write-only. Leave empty to keep the current key. Use a dedicated, unprivileged account.')
-                    ->setRowCount(6)
-            )
-            ->addField(SharpFormTextField::make('passphrase')->setLabel('Key passphrase')->setInputTypePassword()->setHelpMessage('Write-only. Leave empty to keep the current one.'))
             ->addField(SharpFormSelectField::make('environment', [
                 'production' => 'Production',
                 'staging' => 'Staging',
@@ -48,9 +39,6 @@ class MachineForm extends SharpForm
         $formLayout->addColumn(7, fn (FormLayoutColumn $column) => $column
             ->withField('name')
             ->withFields('host|8', 'port|4')
-            ->withField('username')
-            ->withField('private_key')
-            ->withField('passphrase')
             ->withField('environment')
             ->withField('scan_interval_minutes')
             ->withField('autonomy_enabled')
@@ -78,9 +66,6 @@ class MachineForm extends SharpForm
                 }
             }],
             'port' => ['required', 'integer', 'between:1,65535'],
-            'username' => ['required', 'string', 'max:64'],
-            'private_key' => [$id ? 'nullable' : 'required', 'string'],
-            'passphrase' => ['nullable', 'string'],
             'environment' => ['required', 'in:production,staging'],
             'autonomy_enabled' => ['boolean'],
             'scan_interval_minutes' => ['nullable', 'integer', Rule::in(array_keys(config('sentinel.scheduling.frequencies')))],
@@ -91,15 +76,15 @@ class MachineForm extends SharpForm
 
         $hostChanged = $machine->exists && ($machine->host !== $validated['host'] || $machine->port !== (int) $validated['port']);
 
-        foreach (['private_key', 'passphrase'] as $secret) {
-            if (blank($validated[$secret] ?? null)) {
-                unset($validated[$secret]);
-            }
-        }
-
         $validated['scan_interval_minutes'] = ((int) ($validated['scan_interval_minutes'] ?? 0)) ?: null;
 
         $machine->fill($validated);
+
+        if (! $machine->exists) {
+            // Sentinel owns the credentials: a dedicated account name and a fresh key, deployed by `sentinel:provision`.
+            $machine->username = config('sentinel.provisioning.user');
+            $machine->private_key = Machine::generatePrivateKey();
+        }
 
         if ($hostChanged) {
             $machine->host_key_fingerprint = null;

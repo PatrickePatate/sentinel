@@ -9,6 +9,7 @@ use App\Sharp\Entities\AgentRunEntity;
 use App\Sharp\Entities\AuditEntryEntity;
 use App\Sharp\Entities\MachineEntity;
 use App\Sharp\Entities\PendingActionEntity;
+use App\Sharp\Machines\DownloadProvisionScriptCommand;
 use App\Sharp\Machines\ScanMachineCommand;
 use App\Sharp\PendingActions\ApprovePendingActionCommand;
 use App\Sharp\PendingActions\RejectPendingActionCommand;
@@ -19,6 +20,7 @@ use Code16\Sharp\Utils\Menu\SharpMenuItemSection;
 use Code16\Sharp\Utils\Testing\SharpAssertions;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
+use Spatie\Activitylog\Models\Activity;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class, SharpAssertions::class);
@@ -33,22 +35,45 @@ it('lists machines without exposing secrets', function () {
     $this->sharpList(MachineEntity::class)->get()->assertListData(fn ($data) => $data->count(1)->where('0.name', 'web-1')->missing('0.private_key')->etc());
 });
 
-it('creates a machine with an encrypted key and keeps it when editing without one', function () {
+it('creates a machine with a Sentinel-generated user and key, never asking for them', function () {
     $this->sharpForm(MachineEntity::class)->store([
-        'name' => 'db-1', 'host' => '10.0.0.5', 'port' => 22, 'username' => 'sentinel',
-        'private_key' => 'KEY-MATERIAL', 'environment' => 'production', 'autonomy_enabled' => false,
+        'name' => 'db-1', 'host' => '10.0.0.5', 'port' => 22, 'environment' => 'production', 'autonomy_enabled' => false,
+        'username' => 'root', 'private_key' => 'ATTACKER-KEY', // ignored: not form fields any more
     ])->assertSessionHasNoErrors()->assertRedirect();
 
     $machine = Machine::firstWhere('name', 'db-1');
-    expect($machine->private_key)->toBe('KEY-MATERIAL')
-        ->and(DB::table('machines')->value('private_key'))->not->toContain('KEY-MATERIAL');
+    expect($machine->username)->toBe('sentinel')
+        ->and($machine->private_key)->toStartWith('-----BEGIN OPENSSH PRIVATE KEY-----')
+        ->and($machine->publicKey())->toStartWith('ssh-ed25519 ')
+        ->and(DB::table('machines')->value('private_key'))->not->toContain('OPENSSH');
+
+    $key = $machine->private_key;
 
     $this->sharpForm(MachineEntity::class, $machine->id)->update([
-        'name' => 'db-1', 'host' => '10.0.0.6', 'port' => 22, 'username' => 'sentinel',
-        'private_key' => '', 'environment' => 'production', 'autonomy_enabled' => false,
+        'name' => 'db-1', 'host' => '10.0.0.6', 'port' => 22, 'environment' => 'production', 'autonomy_enabled' => false,
+        'username' => 'root', 'private_key' => 'ATTACKER-KEY',
     ])->assertSessionHasNoErrors()->assertRedirect();
 
-    expect($machine->fresh()->private_key)->toBe('KEY-MATERIAL');
+    expect($machine->fresh()->private_key)->toBe($key)->and($machine->fresh()->username)->toBe('sentinel');
+});
+
+it('gives each new machine its own key', function () {
+    foreach (['a', 'b'] as $name) {
+        $this->sharpForm(MachineEntity::class)->store(['name' => $name, 'host' => '10.0.0.5', 'port' => 22, 'environment' => 'staging', 'autonomy_enabled' => false]);
+    }
+
+    expect(Machine::pluck('private_key')->unique())->toHaveCount(2);
+});
+
+it('downloads the provisioning script from the machine page and audits it', function () {
+    $machine = Machine::factory()->create(['private_key' => Machine::generatePrivateKey()]);
+
+    $this->sharpShow(MachineEntity::class, $machine->id)
+        ->instanceCommand(DownloadProvisionScriptCommand::class)
+        ->getForm()->post(['from' => '203.0.113.7'])
+        ->assertReturnsDownload('sentinel-provision-'.Str::slug($machine->name).'.sh');
+
+    expect(Activity::where('event', 'provision_script_downloaded')->count())->toBe(1);
 });
 
 it('resets the pinned host key when the address changes', function () {

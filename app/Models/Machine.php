@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use phpseclib3\Crypt\EC;
+use phpseclib3\Crypt\PublicKeyLoader;
 use RuntimeException;
 
 #[Hidden(['private_key', 'passphrase'])]
@@ -24,6 +26,20 @@ class Machine extends Model
             'revoked_at' => 'datetime',
             'last_scan_at' => 'datetime',
         ];
+    }
+
+    /** OpenSSH public half of the key Sentinel generated (or was given) for this machine. */
+    public function publicKey(): string
+    {
+        $key = PublicKeyLoader::load($this->private_key, $this->passphrase ?: false);
+
+        return trim($key->getPublicKey()->toString('OpenSSH', ['comment' => 'sentinel']));
+    }
+
+    /** A fresh Ed25519 private key in OpenSSH format. It never leaves Sentinel: only the public half is deployed. */
+    public static function generatePrivateKey(): string
+    {
+        return EC::createKey('Ed25519')->toString('OpenSSH');
     }
 
     public function isRevoked(): bool

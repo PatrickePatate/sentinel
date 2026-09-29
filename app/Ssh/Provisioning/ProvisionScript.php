@@ -4,7 +4,6 @@ namespace App\Ssh\Provisioning;
 
 use App\Models\Machine;
 use InvalidArgumentException;
-use phpseclib3\Crypt\PublicKeyLoader;
 
 /**
  * Renders the bash script an administrator runs ONCE, as root, on a machine to let
@@ -32,7 +31,7 @@ class ProvisionScript
             throw new InvalidArgumentException('--from must be a single IP address.');
         }
 
-        $publicKey = $this->publicKeyOf($machine);
+        $publicKey = $machine->publicKey();
         $authorizedOptions = 'restrict'.($fromIp ? ',from="'.$fromIp.'"' : '');
 
         $wrappers = '';
@@ -81,6 +80,15 @@ visudo -cf "\$tmp" >/dev/null || { echo "Generated sudoers is invalid, nothing i
 mv -f "\$tmp" /etc/sudoers.d/sentinel
 trap - EXIT
 
+# 5. Sanity checks (informational, never fatal)
+if command -v sshd >/dev/null && sshd -T 2>/dev/null | grep -qE '^allow(users|groups) '; then
+    sshd -T 2>/dev/null | grep -qE "^allowusers {$user}$" \
+        || echo "WARNING: sshd restricts logins (AllowUsers/AllowGroups) and does not list {$user}: add it, then reload sshd." >&2
+fi
+for tool in fail2ban-client ufw certbot; do
+    command -v "\$tool" >/dev/null || echo "Note: \$tool is not installed here: the matching Sentinel tools will report it as unavailable."
+done
+
 echo "Done. Effective sudo rights of {$user}:"
 sudo -l -U {$user}
 echo "Host key fingerprint to pin in Sentinel (compare with the one it shows):"
@@ -110,12 +118,5 @@ BASH;
         $delimiter = 'SENTINEL_FILE_'.strtoupper(substr(md5($path), 0, 8));
 
         return "cat > {$path} <<'{$delimiter}'\n".rtrim($content)."\n{$delimiter}\nchown root:root {$path}\nchmod {$mode} {$path}";
-    }
-
-    private function publicKeyOf(Machine $machine): string
-    {
-        $key = PublicKeyLoader::load($machine->private_key, $machine->passphrase ?: false);
-
-        return trim($key->getPublicKey()->toString('OpenSSH', ['comment' => 'sentinel']));
     }
 }
