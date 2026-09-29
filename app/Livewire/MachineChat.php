@@ -5,6 +5,7 @@ namespace App\Livewire;
 use App\Ai\ScanRunner;
 use App\Models\ChatMessage;
 use App\Models\Machine;
+use App\Support\SafeMarkdown;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\RateLimiter;
 use Laravel\Ai\Streaming\Events\StreamEvent;
@@ -53,13 +54,26 @@ class MachineChat extends Component
         $this->stream(to: 'question', content: e($text), replace: true);
         $this->stream(to: 'status', content: e('The agent is thinking…'), replace: true);
 
-        $run = $runner->reply($machine, $text, $history, function (StreamEvent $event) {
+        // The answer is re-rendered as a whole each time (Markdown needs its context), throttled to keep it cheap.
+        $answer = '';
+        $lastFlush = 0.0;
+
+        $run = $runner->reply($machine, $text, $history, function (StreamEvent $event) use (&$answer, &$lastFlush) {
             if ($event instanceof TextDelta) {
-                $this->stream(to: 'answer', content: e($event->delta));
+                $answer .= $event->delta;
+
+                if (microtime(true) - $lastFlush >= 0.08) {
+                    $lastFlush = microtime(true);
+                    $this->stream(to: 'answer', content: SafeMarkdown::render($answer), replace: true);
+                }
             } elseif ($event instanceof ToolCall) {
                 $this->stream(to: 'status', content: e("Running {$event->toolCall->name}…"), replace: true);
             }
         });
+
+        if ($answer !== '') {
+            $this->stream(to: 'answer', content: SafeMarkdown::render($answer), replace: true);
+        }
 
         $this->store('assistant', $run->status === 'completed' ? $run->report : 'The agent could not answer: '.$run->report);
     }

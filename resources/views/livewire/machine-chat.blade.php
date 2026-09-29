@@ -17,7 +17,11 @@
         @forelse ($messages as $chatMessage)
             <div wire:key="m{{ $chatMessage->id }}" class="row {{ $chatMessage->role === 'user' ? 'user' : 'assistant' }}">
                 <div class="avatar">@svg($chatMessage->role === 'user' ? 'lucide-user' : 'lucide-bot')</div>
-                <div class="bubble">{{ $chatMessage->content }}</div>
+                @if ($chatMessage->role === 'user')
+                    <div class="bubble">{{ $chatMessage->content }}</div>
+                @else
+                    <div class="bubble md">{!! \App\Support\SafeMarkdown::render($chatMessage->content) !!}</div>
+                @endif
             </div>
         @empty
             <div class="empty" wire:loading.remove wire:target="send">
@@ -39,8 +43,8 @@
             </div>
             <div class="row assistant">
                 <div class="avatar">@svg('lucide-bot')</div>
-                <div class="bubble">
-                    <div wire:stream="answer" style="white-space:pre-wrap;word-break:break-word"></div>
+                <div class="bubble md">
+                    <div wire:stream="answer"></div>
                     <div class="typing-wrap"><span class="typing"><i></i><i></i><i></i></span></div>
                     <div class="status" wire:stream="status"></div>
                 </div>

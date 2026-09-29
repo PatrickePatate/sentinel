@@ -57,6 +57,23 @@
         .bubble { max-width: min(85%, 46rem); padding: .55rem .85rem; border-radius: var(--radius); white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
         .row.assistant .bubble { background: hsl(var(--card)); border: 1px solid hsl(var(--border)); box-shadow: 0 1px 2px hsl(0 0% 0% / .04); }
         .row.user .bubble { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
+        .bubble.md { white-space: normal; }
+        .md > :first-child, .md [wire\:stream="answer"] > :first-child { margin-top: 0; }
+        .md p, .md ul, .md ol, .md pre, .md blockquote, .md table, .md h1, .md h2, .md h3, .md h4 { margin: 0 0 .65rem; }
+        .md > :last-child, .md [wire\:stream="answer"] > :last-child { margin-bottom: 0; }
+        .md h1, .md h2, .md h3, .md h4 { font-size: 1rem; line-height: 1.4; letter-spacing: -.01em; }
+        .md h1 { font-size: 1.1rem; }
+        .md ul, .md ol { padding-left: 1.25rem; }
+        .md li + li { margin-top: .15rem; }
+        .md code { font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: hsl(var(--muted)); border-radius: 4px; padding: .1rem .3rem; }
+        .md pre { background: hsl(var(--muted)); border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) - 2px); padding: .65rem .8rem; overflow-x: auto; white-space: pre; }
+        .md pre code { background: none; padding: 0; border-radius: 0; }
+        .md blockquote { border-left: 3px solid hsl(var(--border)); padding-left: .75rem; color: hsl(var(--muted-foreground)); }
+        .md a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+        .md hr { border: 0; border-top: 1px solid hsl(var(--border)); margin: .75rem 0; }
+        .md table { border-collapse: collapse; display: block; overflow-x: auto; font-size: 13px; }
+        .md th, .md td { border: 1px solid hsl(var(--border)); padding: .3rem .6rem; text-align: left; }
+        .md th { background: hsl(var(--muted)); font-weight: 600; }
         .status { margin-top: .35rem; font-size: 12px; color: hsl(var(--muted-foreground)); }
         .status:empty { display: none; }
 
