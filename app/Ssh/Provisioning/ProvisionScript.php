@@ -91,8 +91,10 @@ done
 
 echo "Done. Effective sudo rights of {$user}:"
 sudo -l -U {$user}
-echo "Host key fingerprint to pin in Sentinel (compare with the one it shows):"
-ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub 2>/dev/null || true
+echo "Host key fingerprints of this machine (paste the SHA256:... of the one Sentinel shows when pinning):"
+for pub in /etc/ssh/ssh_host_*_key.pub; do
+    [[ -f "\$pub" ]] && ssh-keygen -lf "\$pub"
+done
 
 BASH;
     }

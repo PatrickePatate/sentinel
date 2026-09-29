@@ -56,7 +56,7 @@ class MachineShow extends SharpShow
         return $this
             ->setCustomTransformer('provisioning', fn ($value, Machine $m) => $m->host_key_fingerprint
                 ? 'Provisioned and host key pinned. To redeploy or update the permissions after a config change, download the script again and re-run it as root.'
-                : "1. \"Download provisioning script\" (top right). 2. Run it as root on {$m->host}: sudo bash sentinel-provision-*.sh. 3. \"Show current host key\", compare it with the fingerprint the script printed, then \"Pin\" it. Same thing from a terminal: php artisan sentinel:provision {$m->id} | ssh root@{$m->host} bash")
+                : "1. \"Download provisioning script\" (top right). 2. Run it as root on {$m->host}: sudo bash sentinel-provision-*.sh. 3. \"Show current host key\", find the same SHA256:... in the list the script printed, then \"Pin host key\" and paste it. Same thing from a terminal: php artisan sentinel:provision {$m->id} | ssh root@{$m->host} bash")
             ->setCustomTransformer('public_key', function ($value, Machine $m) {
                 try {
                     return $m->publicKey();
