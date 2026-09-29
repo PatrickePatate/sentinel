@@ -1,5 +1,7 @@
 <?php
 
+use App\Ai\Agents\SysadminAgent;
+use App\Ai\ScanRunner;
 use App\Ai\Severity;
 use App\Ai\Tools\SubmitVerdictTool;
 use App\Jobs\RunScan;
@@ -295,4 +297,33 @@ it('creates a Telegram channel keeping the bot token secret and the stored setti
     expect($channel->fresh()->setting('bot_token'))->toBe('123:ABC')->and($channel->fresh()->approverIds())->toBe(['4242', '7']);
 
     $this->sharpList(NotificationChannelEntity::class)->get()->assertListData(fn ($d) => $d->count(1)->missing('0.settings')->missing('0.bot_token')->etc());
+});
+
+it('uses the scheduled-scan model only for scheduled scans, falling back to the default', function () {
+    SysadminAgent::fake(['ok', 'ok', 'ok']);
+    config(['sentinel.agent.provider' => 'openai', 'sentinel.agent.model' => 'strong-model', 'sentinel.agent.scheduled_provider' => 'openai', 'sentinel.agent.scheduled_model' => 'cheap-model']);
+    $machine = Machine::factory()->create();
+    $runner = app(ScanRunner::class);
+
+    $runner->run($machine, 'o', trigger: 'scheduled');
+    SysadminAgent::assertPrompted(fn ($prompt) => $prompt->model === 'cheap-model');
+
+    $runner->run($machine, 'o');
+    SysadminAgent::assertPrompted(fn ($prompt) => $prompt->model === 'strong-model');
+
+    // A scheduled model name without its provider must never be used on the default provider.
+    config(['sentinel.agent.scheduled_provider' => null, 'sentinel.agent.scheduled_model' => 'orphan-model']);
+    $runner->run($machine, 'o', trigger: 'scheduled');
+
+    $seen = [];
+    try {
+        SysadminAgent::assertPrompted(function ($prompt) use (&$seen) {
+            $seen[] = $prompt->model;
+
+            return false;
+        });
+    } catch (Throwable) {
+    }
+
+    expect($seen)->toBe(['cheap-model', 'strong-model', 'strong-model']);
 });

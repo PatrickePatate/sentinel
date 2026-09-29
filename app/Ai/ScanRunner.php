@@ -31,6 +31,13 @@ class ScanRunner
     /** @param list<array{role: string, content: string}> $history */
     private function execute(Machine $machine, string $objective, string $prompt, array $history, ?string $provider = null, ?string $model = null, ?Closure $onStream = null, string $trigger = 'chat', bool $scan = false): AgentRun
     {
+        if ($trigger === 'scheduled') {
+            // A scheduled-only model is only used together with its own provider: a model name means nothing on another one.
+            $scheduledProvider = config('sentinel.agent.scheduled_provider');
+            $provider ??= $scheduledProvider;
+            $model ??= $scheduledProvider ? config('sentinel.agent.scheduled_model') : null;
+        }
+
         $provider ??= config('sentinel.agent.provider');
         $model ??= config('sentinel.agent.model');
 
