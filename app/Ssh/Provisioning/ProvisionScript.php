@@ -52,11 +52,11 @@ set -euo pipefail
 [[ -f /etc/debian_version ]] || { echo "Debian/Ubuntu only." >&2; exit 1; }
 command -v visudo >/dev/null || { echo "visudo not found (install sudo)." >&2; exit 1; }
 
-# 1. Unprivileged user, password locked, can read logs but not become root freely
+# 1. Unprivileged user, no usable password ("*": password login impossible, key login still allowed even with UsePAM off), can read logs but not become root freely
 if ! id -u {$user} >/dev/null 2>&1; then
     useradd --create-home --shell /bin/bash --comment "Sentinel agent" {$user}
 fi
-passwd -l {$user} >/dev/null
+usermod -p '*' {$user}
 for group in systemd-journal adm; do
     getent group "\$group" >/dev/null && usermod -aG "\$group" {$user}
 done

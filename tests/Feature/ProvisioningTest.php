@@ -3,6 +3,7 @@
 use App\Models\Machine;
 use App\Models\PendingAction;
 use App\Ssh\ActionCatalog;
+use App\Ssh\PhpseclibTransport;
 use App\Ssh\Provisioning\ProvisionScript;
 use App\Ssh\Provisioning\RevokeScript;
 use App\Ssh\Provisioning\SudoersBuilder;
@@ -66,7 +67,7 @@ it('renders a script with valid bash syntax and a restricted key', function () {
     file_put_contents($file, $script);
 
     expect(Process::run(['bash', '-n', $file])->successful())->toBeTrue()
-        ->and($script)->toContain('set -euo pipefail', 'visudo -cf', 'passwd -l sentinel', 'restrict,from="203.0.113.9" ssh-ed25519', 'ignoreip = 127.0.0.1/8 ::1 203.0.113.9')
+        ->and($script)->toContain('set -euo pipefail', 'visudo -cf', "usermod -p '*' sentinel", 'restrict,from="203.0.113.9" ssh-ed25519', 'ignoreip = 127.0.0.1/8 ::1 203.0.113.9')
         ->and($script)->not->toContain('PRIVATE KEY');
     unlink($file);
 });
@@ -195,4 +196,24 @@ it('writes the provisioning script of a Sentinel-generated key to a private file
         ->not->toContain('PRIVATE KEY');
 
     unlink($path);
+});
+
+it('explains the SSH failure with the user, host and a pointer to the diagnostic command', function () {
+    config(['sentinel.transport' => 'ssh']);
+    $machine = Machine::factory()->create(['host' => '127.0.0.1', 'port' => 1, 'private_key' => Machine::generatePrivateKey()]);
+
+    try {
+        (new PhpseclibTransport)->run($machine, 'true', 3);
+        $this->fail('should not connect');
+    } catch (RuntimeException $e) {
+        expect($e->getMessage())->toContain('127.0.0.1');
+    }
+
+    $this->artisan('sentinel:check', ['machine' => $machine->id])->expectsOutputToContain('Cannot reach')->assertFailed();
+});
+
+it('does not pretend to check anything with the fake transport', function () {
+    config(['sentinel.transport' => 'fake']);
+
+    $this->artisan('sentinel:check', ['machine' => Machine::factory()->create()->id])->expectsOutputToContain('nothing to check')->assertSuccessful();
 });

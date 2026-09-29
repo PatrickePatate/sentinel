@@ -21,7 +21,7 @@ class PhpseclibTransport implements SshTransport
         $key = PublicKeyLoader::load($machine->private_key, $machine->passphrase ?: false);
 
         if (! $ssh->login($machine->username, $key)) {
-            throw new RuntimeException("SSH authentication failed for {$machine->name}.");
+            throw new RuntimeException("SSH authentication failed for {$machine->username}@{$machine->host}:{$machine->port} ({$machine->name}): ".($ssh->getLastError() ?: 'the server rejected the key').'. Run `php artisan sentinel:check '.$machine->id.'` to diagnose.');
         }
 
         $output = $ssh->exec($command);
