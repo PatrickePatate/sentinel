@@ -1,9 +1,12 @@
 <?php
 
 use App\Jobs\RunScan;
+use App\Models\AgentRun;
 use App\Models\Machine;
 use App\Models\PendingAction;
 use App\Models\User;
+use App\Sharp\Entities\AgentRunEntity;
+use App\Sharp\Entities\AuditEntryEntity;
 use App\Sharp\Entities\MachineEntity;
 use App\Sharp\Entities\PendingActionEntity;
 use App\Sharp\Machines\ScanMachineCommand;
@@ -129,4 +132,20 @@ it('groups the menu in sections with resolvable Lucide icons', function () {
     }
 
     $this->sharpList(MachineEntity::class)->get()->assertOk()->assertSee('Infrastructure')->assertSee('Traceability');
+});
+
+it('renders every list and show page without error', function () {
+    $machine = Machine::factory()->create();
+    $run = AgentRun::create(['machine_id' => $machine->id, 'provider' => 'x', 'objective' => 'x']);
+    $pending = PendingAction::create(['machine_id' => $machine->id, 'action' => 'clean_apt_cache', 'command' => 'x', 'risk' => 'low', 'reason' => 'x']);
+    activity('ssh')->performedOn($machine)->event('ok')->withProperties(['command' => 'df'])->log('disk_usage');
+
+    foreach ([MachineEntity::class, AgentRunEntity::class, PendingActionEntity::class, AuditEntryEntity::class] as $entity) {
+        $this->sharpList($entity)->get()->assertOk();
+    }
+
+    $this->sharpShow(MachineEntity::class, $machine->id)->get()->assertOk();
+    $this->sharpShow(AgentRunEntity::class, $run->id)->get()->assertOk();
+    $this->sharpShow(PendingActionEntity::class, $pending->id)->get()->assertOk();
+    $this->sharpForm(MachineEntity::class, $machine->id)->edit()->assertOk();
 });

@@ -13,13 +13,15 @@ use App\Ssh\ToolCatalog;
 use Laravel\Ai\Attributes\MaxSteps;
 use Laravel\Ai\Attributes\Timeout;
 use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Contracts\Conversational;
 use Laravel\Ai\Contracts\HasTools;
+use Laravel\Ai\Messages\Message;
 use Laravel\Ai\Promptable;
 use Stringable;
 
 #[MaxSteps(15)]
 #[Timeout(180)]
-class SysadminAgent implements Agent, HasTools
+class SysadminAgent implements Agent, Conversational, HasTools
 {
     use Promptable;
 
@@ -27,7 +29,14 @@ class SysadminAgent implements Agent, HasTools
         private Machine $machine,
         private ?AgentRun $run = null,
         private string $objective = '',
+        /** @var list<array{role: string, content: string}> */
+        private array $history = [],
     ) {}
+
+    public function messages(): iterable
+    {
+        return array_map(fn (array $m) => new Message($m['role'], $m['content']), $this->history);
+    }
 
     public function instructions(): Stringable|string
     {

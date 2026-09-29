@@ -6,7 +6,9 @@ use App\Ssh\ActionCatalog;
 use App\Ssh\PhpseclibTransport;
 use App\Ssh\SshTransport;
 use App\Ssh\ToolCatalog;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
+use Livewire\Livewire;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -20,6 +22,8 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        //
+        Livewire::setUpdateRoute(fn ($handle) => Route::post('/chat/livewire/update', $handle)
+            ->middleware(['sharp_common', 'sharp_auth'])
+            ->name('sentinel.livewire.update'));
     }
 }
