@@ -84,6 +84,7 @@ it('generates a sudoers file that visudo accepts', function () {
 });
 
 it('ships wrappers that reject malicious arguments before doing anything', function (string $wrapper, array $args, int $expectedExit) {
+    config(['sentinel.actions.package_allowlist' => ['zz-nonexistent-pkg', 'openssh-*', 'linux-*']]);
     $file = tempnam(sys_get_temp_dir(), 'wrapper');
     file_put_contents($file, app(ProvisionScript::class)->wrapperBody($wrapper, '203.0.113.9'));
     chmod($file, 0755);
@@ -93,6 +94,8 @@ it('ships wrappers that reject malicious arguments before doing anything', funct
 
     expect($result->exitCode())->toBe($expectedExit);
 })->with([
+    'upgrade: not on allowlist' => ['sentinel-upgrade-package', ['curl'], 3],
+    'upgrade: allowlisted but not installed' => ['sentinel-upgrade-package', ['zz-nonexistent-pkg'], 4],
     'upgrade: injection' => ['sentinel-upgrade-package', ['curl; reboot'], 2],
     'upgrade: option' => ['sentinel-upgrade-package', ['--purge'], 2],
     'upgrade: two args' => ['sentinel-upgrade-package', ['curl', 'wget'], 2],
@@ -114,3 +117,20 @@ it('renders every wrapper as valid bash', function (string $wrapper) {
     expect(Process::run(['bash', '-n', $file])->successful())->toBeTrue();
     unlink($file);
 })->with(['sentinel-upgrade-package', 'sentinel-fail2ban-unban', 'sentinel-fail2ban-filter', 'sentinel-fail2ban-jail', 'sentinel-fail2ban-remove']);
+
+it('validates fail2ban filter payloads in the wrapper before writing anything', function (string $payload, int $expectedExit) {
+    $file = tempnam(sys_get_temp_dir(), 'wrapper');
+    file_put_contents($file, app(ProvisionScript::class)->wrapperBody('sentinel-fail2ban-filter'));
+
+    $result = Process::input(base64_encode($payload))->run(['bash', $file, 'my-filter']);
+    unlink($file);
+
+    expect($result->exitCode())->toBe($expectedExit, $result->errorOutput());
+})->with([
+    'interpolation' => ['^%(__prefix_line)s <HOST>', 2],
+    'no HOST' => ['^nothing$', 2],
+    'leading space' => [' ^<HOST> x', 2],
+    'six lines' => [implode("\n", array_fill(0, 6, '^<HOST> x')), 2],
+    'empty line in the middle' => ["^<HOST> x\n\n^<HOST> y", 2],
+    'control char' => ["^<HOST> \x01", 2],
+]);

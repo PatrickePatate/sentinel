@@ -10,6 +10,7 @@ use App\Ssh\ToolCatalog;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Livewire\Livewire;
+use RuntimeException;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -23,6 +24,10 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        if (config('sentinel.transport') === 'fake' && $this->app->isProduction()) {
+            throw new RuntimeException('SENTINEL_TRANSPORT=fake is forbidden in production: it would report a simulated machine as real.');
+        }
+
         Livewire::setUpdateRoute(fn ($handle) => Route::post('/chat/livewire/update', $handle)
             ->middleware(['sharp_common', 'sharp_auth'])
             ->name('sentinel.livewire.update'));

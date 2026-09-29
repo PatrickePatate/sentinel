@@ -14,6 +14,14 @@ decoded=$(printf '%s' "$payload" | base64 -d) || { echo "invalid payload" >&2; e
 mapfile -t lines <<<"$decoded"
 (( ${#lines[@]} >= 1 && ${#lines[@]} <= 5 )) || { echo "1 to 5 failregex lines expected" >&2; exit 2; }
 
+# Validate everything BEFORE touching the filesystem.
+for line in "${lines[@]}"; do
+    [[ ${#line} -ge 1 && ${#line} -le 500 ]] || { echo "invalid regex length" >&2; exit 2; }
+    [[ $line =~ ^[[:graph:]][[:print:]]*$ ]] || { echo "regex must be printable ASCII without leading space" >&2; exit 2; }
+    [[ $line != *'%('* ]] || { echo "fail2ban interpolation '%(' is not allowed" >&2; exit 2; }
+    [[ $line == *'<HOST>'* || $line == *'<ADDR>'* ]] || { echo "regex must contain <HOST>" >&2; exit 2; }
+done
+
 dir=/etc/fail2ban/filter.d
 target=$dir/sentinel-$name.conf
 tmp=$(mktemp "$dir/.sentinel-XXXXXX")
@@ -24,9 +32,6 @@ trap 'rm -f "$tmp"' EXIT
     echo "[Definition]"
     first=1
     for line in "${lines[@]}"; do
-        [[ ${#line} -ge 1 && ${#line} -le 500 ]] || { echo "invalid regex length" >&2; exit 2; }
-        [[ $line =~ ^[[:graph:]][[:print:]]*$ ]] || { echo "regex must be printable ASCII without leading space" >&2; exit 2; }
-        [[ $line == *'<HOST>'* || $line == *'<ADDR>'* ]] || { echo "regex must contain <HOST>" >&2; exit 2; }
         if (( first )); then echo "failregex = $line"; first=0; else echo "            $line"; fi
     done
 } >"$tmp"

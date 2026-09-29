@@ -98,6 +98,7 @@ BASH;
             ->implode("\n");
 
         return strtr($body, [
+            '__ALLOWLIST__' => collect(config('sentinel.actions.package_allowlist'))->filter()->map(fn ($p) => "'{$p}'")->implode(' '),
             '__DENYLIST__' => collect(config('sentinel.actions.package_denylist'))->map(fn ($p) => "'{$p}'")->implode(' '),
             '__LOG_CASES__' => $logCases,
             '__IGNOREIP__' => $fromIp ?? '',

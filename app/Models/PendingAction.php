@@ -7,7 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PendingAction extends Model
 {
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = ['machine_id', 'agent_run_id', 'action', 'arguments', 'command', 'risk', 'reason', 'status', 'output', 'decided_at'];
 
     protected function casts(): array
     {

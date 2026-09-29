@@ -19,7 +19,9 @@ class FetchHostKeyCommand extends InstanceCommand
         try {
             $fingerprint = HostKeyFingerprint::fetch(Machine::findOrFail($instanceId));
         } catch (Throwable $e) {
-            return $this->info('Connection failed: '.$e->getMessage());
+            report($e);
+
+            return $this->info('Connection failed (see the application log).');
         }
 
         return $this->info($fingerprint

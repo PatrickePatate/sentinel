@@ -39,15 +39,16 @@ class Fail2banTestRegexTool implements Tool
 
         self::assertValidRegex($regex);
 
-        return 'timeout 15 fail2ban-regex '.escapeshellarg($logs[$log]).' '.escapeshellarg($regex).' 2>&1 | tail -n 40';
+        return 'timeout 15 fail2ban-regex -- '.escapeshellarg($logs[$log]).' '.escapeshellarg($regex).' 2>&1 | tail -n 40';
     }
 
     public static function assertValidRegex(mixed $regex): void
     {
         if (! is_string($regex) || $regex === '' || strlen($regex) > 500
-            || ! preg_match('/^[\x21-\x7e][\x20-\x7e]*$/', $regex)
+            || ! preg_match('/^[\x21-\x2c\x2e-\x7e][\x20-\x7e]*$/', $regex)
+            || str_contains($regex, '%(')
             || (! str_contains($regex, '<HOST>') && ! str_contains($regex, '<ADDR>'))) {
-            throw new InvalidToolArguments('failregex must be 1-500 printable ASCII characters, not start with whitespace, and contain <HOST>.');
+            throw new InvalidToolArguments('failregex must be 1-500 printable ASCII characters, not start with whitespace or "-", not contain "%(", and contain <HOST>.');
         }
     }
 }

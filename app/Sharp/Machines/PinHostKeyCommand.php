@@ -36,7 +36,9 @@ class PinHostKeyCommand extends InstanceCommand
         try {
             $actual = HostKeyFingerprint::fetch($machine);
         } catch (Throwable $e) {
-            return $this->info('Connection failed: '.$e->getMessage());
+            report($e);
+
+            return $this->info('Connection failed (see the application log).');
         }
 
         if (! $actual || ! hash_equals($actual, trim($data['fingerprint']))) {

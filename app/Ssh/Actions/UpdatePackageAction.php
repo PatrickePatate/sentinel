@@ -40,6 +40,12 @@ class UpdatePackageAction implements ActionTool, RequiresSudo
             throw new InvalidToolArguments('Invalid package name.');
         }
 
+        $allowed = array_filter(config('sentinel.actions.package_allowlist'), fn ($pattern) => fnmatch($pattern, $package));
+
+        if ($allowed === []) {
+            throw new InvalidToolArguments("Package {$package} is not on the upgrade allowlist.");
+        }
+
         foreach (config('sentinel.actions.package_denylist') as $pattern) {
             if (fnmatch($pattern, $package)) {
                 throw new InvalidToolArguments("Package {$package} is protected and cannot be upgraded by the agent.");

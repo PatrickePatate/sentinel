@@ -7,7 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AgentRun extends Model
 {
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = ['machine_id', 'provider', 'objective', 'status', 'messages', 'report'];
 
     protected function casts(): array
     {

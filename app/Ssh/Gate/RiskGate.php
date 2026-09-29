@@ -50,7 +50,7 @@ class RiskGate
                 ]),
             ])->classify(config('sentinel.gate.provider'), config('sentinel.gate.model'));
         } catch (Throwable $e) {
-            return new GateDecision(GateVerdict::Refuse, 'Risk model unavailable, failing closed: '.$e->getMessage());
+            return new GateDecision(GateVerdict::Refuse, 'Risk model unavailable, failing closed.', ['error' => $e->getMessage()]);
         }
 
         $verdict = $answers->answer('verdict');

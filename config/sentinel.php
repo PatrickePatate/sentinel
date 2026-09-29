@@ -44,10 +44,14 @@ return [
     'actions' => [
         'use_sudo' => env('SENTINEL_USE_SUDO', true),
 
-        // Packages the agent may never upgrade, even with human approval (fnmatch patterns).
+        // Packages the agent may upgrade (fnmatch patterns). Empty = none: the action fails closed.
+        'package_allowlist' => array_filter(explode(',', (string) env('SENTINEL_UPGRADABLE_PACKAGES', ''))),
+
+        // Packages the agent may never upgrade, nor touch as a dependency, even with human approval (fnmatch patterns).
         'package_denylist' => [
             'openssh-*', 'libc6*', 'systemd*', 'dbus*', 'linux-*', 'grub*', 'docker-*', 'containerd*',
-            'mysql-*', 'mariadb-*', 'postgresql*', 'sudo', 'apt', 'dpkg',
+            'mysql-*', 'mariadb-*', 'postgresql*', 'sudo', 'apt', 'apt-*', 'dpkg', 'openssl', 'libssl*', 'ca-certificates',
+            'libpam*', 'fail2ban', 'ufw', 'iptables', 'nftables', 'certbot*', 'cron', 'unattended-upgrades',
         ],
 
         'reloadable_services' => array_filter(explode(',', (string) env('SENTINEL_RELOADABLE_SERVICES', ''))),

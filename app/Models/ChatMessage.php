@@ -6,5 +6,6 @@ use Illuminate\Database\Eloquent\Model;
 
 class ChatMessage extends Model
 {
-    protected $guarded = [];
+    /** @var list<string> */
+    protected $fillable = ['machine_id', 'user_id', 'role', 'content'];
 }

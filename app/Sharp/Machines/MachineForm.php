@@ -3,6 +3,7 @@
 namespace App\Sharp\Machines;
 
 use App\Models\Machine;
+use Closure;
 use Code16\Sharp\Form\Fields\SharpFormCheckField;
 use Code16\Sharp\Form\Fields\SharpFormNumberField;
 use Code16\Sharp\Form\Fields\SharpFormSelectField;
@@ -29,7 +30,7 @@ class MachineForm extends SharpForm
                     ->setHelpMessage('Write-only. Leave empty to keep the current key. Use a dedicated, unprivileged account.')
                     ->setRowCount(6)
             )
-            ->addField(SharpFormTextField::make('passphrase')->setLabel('Key passphrase')->setHelpMessage('Write-only. Leave empty to keep the current one.'))
+            ->addField(SharpFormTextField::make('passphrase')->setLabel('Key passphrase')->setInputTypePassword()->setHelpMessage('Write-only. Leave empty to keep the current one.'))
             ->addField(SharpFormSelectField::make('environment', [
                 'production' => 'Production',
                 'staging' => 'Staging',
@@ -61,7 +62,13 @@ class MachineForm extends SharpForm
 
         $rules = [
             'name' => ['required', 'string', 'max:100'],
-            'host' => ['required', 'string', 'max:255'],
+            'host' => ['required', 'string', 'max:255', function (string $attribute, mixed $value, Closure $fail) {
+                $isHostname = preg_match('/^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/i', (string) $value);
+
+                if (! $isHostname && ! filter_var($value, FILTER_VALIDATE_IP)) {
+                    $fail('The host must be an IP address or a valid hostname.');
+                }
+            }],
             'port' => ['required', 'integer', 'between:1,65535'],
             'username' => ['required', 'string', 'max:64'],
             'private_key' => [$id ? 'nullable' : 'required', 'string'],

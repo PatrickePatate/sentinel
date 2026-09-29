@@ -7,6 +7,7 @@ use App\Models\ChatMessage;
 use App\Models\Machine;
 use App\Models\PendingAction;
 use App\Models\User;
+use App\Providers\AppServiceProvider;
 use App\Sharp\Entities\MachineEntity;
 use App\Sharp\Machines\ScanMachineCommand;
 use App\Ssh\ActionCatalog;
@@ -155,3 +156,24 @@ it('stores the author of a queued scan', function () {
 
     Queue::assertPushed(RunScan::class, fn ($job) => $job->userId === auth()->id());
 });
+
+it('refuses to boot with the fake transport in production', function () {
+    config(['sentinel.transport' => 'fake']);
+    app()->detectEnvironment(fn () => 'production');
+
+    expect(fn () => (new AppServiceProvider(app()))->boot())->toThrow(RuntimeException::class, 'forbidden in production');
+});
+
+it('validates the host of a machine', function (string $host, bool $valid) {
+    $this->actingAs(User::factory()->admin()->create());
+
+    $response = $this->sharpForm(MachineEntity::class)->store([
+        'name' => 'm', 'host' => $host, 'port' => 22, 'username' => 'sentinel',
+        'private_key' => 'k', 'environment' => 'production', 'autonomy_enabled' => false,
+    ]);
+
+    $valid ? $response->assertSessionHasNoErrors() : $response->assertSessionHasErrors('host');
+})->with([
+    ['203.0.113.10', true], ['web-1.example.org', true], ['2001:db8::1', true],
+    ['host; id', false], ['http://x', false], ['a b', false], ['-bad.example.org', false],
+]);

@@ -146,6 +146,7 @@ it('caps autonomous actions per scan', function () {
 });
 
 it('upgrades a single installed package only after approval, without installing or removing others', function () {
+    config(['sentinel.actions.package_allowlist' => ['curl']]);
     $transport = recordingTransport();
     $machine = Machine::factory()->create(['autonomy_enabled' => true]);
     $executor = actions($transport);
@@ -159,6 +160,7 @@ it('upgrades a single installed package only after approval, without installing 
 });
 
 it('rejects malicious or protected package names', function (string $package) {
+    config(['sentinel.actions.package_allowlist' => ['*']]);
     $transport = recordingTransport();
 
     expect(actions($transport)->request(Machine::factory()->create(), 'update_package', ['package' => $package], null, 'x'))->toStartWith('ERROR')
@@ -167,7 +169,7 @@ it('rejects malicious or protected package names', function (string $package) {
 })->with(['curl; reboot', '$(id)', '--purge', 'Curl', 'a b', '', 'openssh-server', 'libc6', 'linux-image-6.8.0', 'systemd-sysv', 'mysql-server']);
 
 it('prefixes actions with non-interactive sudo when enabled', function () {
-    config(['sentinel.actions.use_sudo' => true, 'sentinel.actions.restartable_services' => ['nginx']]);
+    config(['sentinel.actions.package_allowlist' => ['curl'], 'sentinel.actions.use_sudo' => true, 'sentinel.actions.restartable_services' => ['nginx']]);
 
     expect(ActionCatalog::default()->get('clean_apt_cache')->command([]))->toStartWith('sudo -n apt-get clean')
         ->and(ActionCatalog::default()->get('restart_service')->command(['service' => 'nginx']))->toStartWith('sudo -n systemctl restart')
@@ -207,6 +209,8 @@ it('rejects invalid arguments for the new actions', function (string $action, ar
     'reset-failed: not allowlisted' => ['reset_failed_unit', ['service' => 'cron']],
     'unban: bad ip' => ['fail2ban_unban', ['jail' => 'sshd', 'ip' => '1.2.3.4; id']],
     'unban: bad jail' => ['fail2ban_unban', ['jail' => 'sshd;id', 'ip' => '1.2.3.4']],
+    'filter: leading dash regex' => ['fail2ban_write_filter', ['name' => 'x1', 'failregex' => '--help <HOST>']],
+    'filter: interpolation' => ['fail2ban_write_filter', ['name' => 'x1', 'failregex' => '^%(__prefix_line)s <HOST>']],
     'filter: no HOST' => ['fail2ban_write_filter', ['name' => 'x1', 'failregex' => '^nothing here$']],
     'filter: 6 lines' => ['fail2ban_write_filter', ['name' => 'x1', 'failregex' => implode("\n", array_fill(0, 6, '^<HOST> x'))]],
     'filter: leading space on 2nd line' => ['fail2ban_write_filter', ['name' => 'x1', 'failregex' => "^<HOST> ok\n ^<HOST> x"]],
@@ -227,7 +231,7 @@ it('tests a regex with fail2ban-regex on allowlisted logs only, without sudo', f
     $executor->execute($machine, 'fail2ban_test_regex', ['log' => 'sshd', 'failregex' => '^Failed password for .* from <HOST>']);
     $rejected = $executor->execute($machine, 'fail2ban_test_regex', ['log' => '/etc/shadow', 'failregex' => '^<HOST>']);
 
-    expect($transport->commands)->toBe(["timeout 15 fail2ban-regex '/var/log/auth.log' '^Failed password for .* from <HOST>' 2>&1 | tail -n 40"])
+    expect($transport->commands)->toBe(["timeout 15 fail2ban-regex -- '/var/log/auth.log' '^Failed password for .* from <HOST>' 2>&1 | tail -n 40"])
         ->and($rejected)->toStartWith('ERROR');
 });
 
@@ -235,4 +239,37 @@ it('lets the agent see the new tools and actions', function () {
     $names = collect(iterator_to_array((new SysadminAgent(Machine::factory()->create()))->tools(), false))->map->name()->all();
 
     expect($names)->toContain('fail2ban_test_regex', 'fail2ban_write_filter', 'fail2ban_create_jail', 'reload_service', 'reset_failed_unit', 'renew_certificates', 'fail2ban_unban');
+});
+
+it('fails closed: packages outside the allowlist cannot be upgraded, even if not protected', function () {
+    config(['sentinel.actions.package_allowlist' => ['nginx']]);
+    $transport = recordingTransport();
+    $machine = Machine::factory()->create();
+
+    expect(actions($transport)->request($machine, 'update_package', ['package' => 'curl'], null, 'x'))->toStartWith('ERROR')
+        ->and(actions($transport)->request($machine, 'update_package', ['package' => 'nginx'], null, 'x'))->toStartWith('PENDING_HUMAN_APPROVAL');
+
+    config(['sentinel.actions.package_allowlist' => []]);
+    expect(actions($transport)->request($machine, 'update_package', ['package' => 'nginx'], null, 'x'))->toStartWith('ERROR');
+});
+
+it('never upgrades a denylisted package even when the allowlist matches it', function () {
+    config(['sentinel.actions.package_allowlist' => ['*']]);
+
+    expect(actions(recordingTransport())->request(Machine::factory()->create(), 'update_package', ['package' => 'openssl'], null, 'x'))->toStartWith('ERROR');
+});
+
+it('hides low-level failure details from the model but keeps them in the audit trail', function () {
+    $transport = new class implements SshTransport
+    {
+        public function run(Machine $machine, string $command, int $timeoutSeconds): CommandResult
+        {
+            throw new RuntimeException('connect to 10.9.8.7:22 refused, key /home/x/.ssh/id');
+        }
+    };
+
+    $out = (new SafeExecutor(ToolCatalog::default(), $transport))->execute(Machine::factory()->create(), 'disk_usage');
+
+    expect($out)->not->toContain('10.9.8.7')
+        ->and(Activity::where('event', 'failed')->first()->properties['output_excerpt'])->toContain('10.9.8.7');
 });

@@ -44,7 +44,7 @@ class SafeExecutor
         } catch (Throwable $e) {
             $this->audit($machine, $run, $toolName, $arguments, $command, null, $e->getMessage(), 'failed');
 
-            return 'ERROR: '.$e->getMessage();
+            return 'ERROR: the command could not be run on the machine (details are in the audit log).';
         }
 
         $output = $this->truncate($result->output);

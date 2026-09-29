@@ -46,6 +46,7 @@ class SudoersBuilder
         return <<<SUDOERS
 # Managed by Sentinel - do not edit by hand. Regenerate with `php artisan sentinel:provision`.
 # {$user} may run ONLY the commands below, as root, without password.
+Defaults:{$user} env_reset
 Defaults:{$user} !requiretty
 Defaults:{$user} logfile="/var/log/sentinel-sudo.log"
 

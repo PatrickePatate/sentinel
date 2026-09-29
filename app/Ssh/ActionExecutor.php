@@ -140,7 +140,7 @@ class ActionExecutor
         } catch (Throwable $e) {
             $this->audit->record($machine, $run, 'action_failed', $action, $context + ['command' => $command, 'error' => $e->getMessage()]);
 
-            return 'ERROR: '.$e->getMessage();
+            return 'ERROR: the action could not be run on the machine (details are in the audit log).';
         }
 
         $output = mb_strcut(mb_convert_encoding($result->output, 'UTF-8', 'UTF-8'), 0, SafeExecutor::MAX_OUTPUT_BYTES);
