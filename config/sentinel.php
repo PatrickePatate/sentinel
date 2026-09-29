@@ -36,16 +36,16 @@ return [
 
     'agent' => [
         'provider' => env('SENTINEL_AI_PROVIDER', 'anthropic'),
-        'model' => env('SENTINEL_AI_MODEL'),
+        'model' => env('SENTINEL_AI_MODEL') ?: null,
 
         // Autonomous (scheduled) scans can use a cheaper model. Each falls back to the default above when unset.
-        'scheduled_provider' => env('SENTINEL_SCHEDULED_PROVIDER'),
-        'scheduled_model' => env('SENTINEL_SCHEDULED_MODEL'),
+        'scheduled_provider' => env('SENTINEL_SCHEDULED_PROVIDER') ?: null,
+        'scheduled_model' => env('SENTINEL_SCHEDULED_MODEL') ?: null,
     ],
 
     'gate' => [
         'provider' => env('SENTINEL_GATE_PROVIDER', 'openrouter'),
-        'model' => env('SENTINEL_GATE_MODEL'),
+        'model' => env('SENTINEL_GATE_MODEL') ?: null,
         'min_execute_confidence' => 0.95,
         'max_destructive' => 0.05,
         'min_reversible' => 0.8,

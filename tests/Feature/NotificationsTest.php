@@ -327,3 +327,16 @@ it('uses the scheduled-scan model only for scheduled scans, falling back to the 
 
     expect($seen)->toBe(['cheap-model', 'strong-model', 'strong-model']);
 });
+
+it('treats empty model env values as unset so the provider default is used', function () {
+    putenv('SENTINEL_GATE_MODEL=');
+    $_ENV['SENTINEL_GATE_MODEL'] = '';
+    $_SERVER['SENTINEL_GATE_MODEL'] = '';
+
+    $config = require config_path('sentinel.php');
+
+    expect($config['gate']['model'])->toBeNull();
+
+    putenv('SENTINEL_GATE_MODEL');
+    unset($_ENV['SENTINEL_GATE_MODEL'], $_SERVER['SENTINEL_GATE_MODEL']);
+});
