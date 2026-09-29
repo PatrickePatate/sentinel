@@ -22,11 +22,6 @@ class Machine extends Model
         ];
     }
 
-    public function auditLogs(): HasMany
-    {
-        return $this->hasMany(AuditLog::class);
-    }
-
     public function agentRuns(): HasMany
     {
         return $this->hasMany(AgentRun::class);

@@ -2,6 +2,8 @@
 
 namespace App\Ssh\Tools;
 
+use Illuminate\Contracts\JsonSchema\JsonSchema;
+
 /**
  * A read-only tool that maps to a constant command and takes no arguments.
  */
@@ -23,9 +25,9 @@ class FixedCommandTool implements Tool
         return $this->description;
     }
 
-    public function inputSchema(): array
+    public function schema(JsonSchema $schema): array
     {
-        return ['type' => 'object', 'properties' => new \stdClass, 'additionalProperties' => false];
+        return [];
     }
 
     public function command(array $arguments): string

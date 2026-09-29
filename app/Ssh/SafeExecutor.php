@@ -3,7 +3,6 @@
 namespace App\Ssh;
 
 use App\Models\AgentRun;
-use App\Models\AuditLog;
 use App\Models\Machine;
 use App\Ssh\Tools\InvalidToolArguments;
 use InvalidArgumentException;
@@ -65,15 +64,17 @@ class SafeExecutor
     /** @param array<string, mixed> $arguments */
     private function audit(Machine $machine, ?AgentRun $run, string $tool, array $arguments, string $command, ?int $exitCode, string $excerpt, string $status): void
     {
-        AuditLog::create([
-            'machine_id' => $machine->id,
-            'agent_run_id' => $run?->id,
-            'tool' => $tool,
-            'arguments' => $arguments,
-            'command' => $command,
-            'exit_code' => $exitCode,
-            'output_excerpt' => $excerpt,
-            'status' => $status,
-        ]);
+        activity('ssh')
+            ->performedOn($machine)
+            ->event($status)
+            ->withProperties([
+                'tool' => $tool,
+                'arguments' => $arguments,
+                'command' => $command,
+                'exit_code' => $exitCode,
+                'output_excerpt' => $excerpt,
+                'agent_run_id' => $run?->id,
+            ])
+            ->log($tool);
     }
 }

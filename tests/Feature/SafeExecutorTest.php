@@ -1,12 +1,14 @@
 <?php
 
-use App\Models\AuditLog;
+use App\Ai\Agents\SysadminAgent;
 use App\Models\Machine;
 use App\Ssh\CommandResult;
 use App\Ssh\SafeExecutor;
 use App\Ssh\SshTransport;
 use App\Ssh\ToolCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Ai\Tools\Request;
+use Spatie\Activitylog\Models\Activity;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
@@ -34,7 +36,7 @@ it('runs a catalog tool and audits it', function () {
 
     expect($output)->toBe("ran\n")
         ->and($transport->commands)->toBe(['df -hT -x tmpfs -x devtmpfs'])
-        ->and(AuditLog::first()->status)->toBe('ok');
+        ->and(Activity::first()->event)->toBe('ok');
 });
 
 it('never runs unknown tools', function () {
@@ -45,7 +47,7 @@ it('never runs unknown tools', function () {
 
     expect($output)->toStartWith('ERROR')
         ->and($transport->commands)->toBeEmpty()
-        ->and(AuditLog::first()->status)->toBe('rejected');
+        ->and(Activity::first()->event)->toBe('rejected');
 });
 
 it('rejects injection through tool arguments', function (string $service) {
@@ -81,4 +83,25 @@ it('truncates huge outputs', function () {
 
 it('does not leak the private key when serialized', function () {
     expect(Machine::factory()->create()->toArray())->not->toHaveKey('private_key');
+});
+
+it('exposes catalog tools to the Laravel AI agent', function () {
+    $machine = Machine::factory()->create();
+    $tools = iterator_to_array((new SysadminAgent($machine))->tools(), false);
+    $names = array_map(fn ($t) => $t->name(), $tools);
+
+    expect($names)->toContain('disk_usage', 'service_status')->not->toContain('run_shell');
+});
+
+it('routes AI tool calls through the safe executor', function () {
+    $transport = fakeTransport();
+    app()->instance(SshTransport::class, $transport);
+    $machine = Machine::factory()->create();
+
+    $tool = collect((new SysadminAgent($machine))->tools())
+        ->first(fn ($t) => $t->name() === 'service_status');
+
+    $result = $tool->handle(new Request(['service' => 'nginx; reboot']));
+
+    expect($result)->toStartWith('ERROR')->and($transport->commands)->toBeEmpty();
 });

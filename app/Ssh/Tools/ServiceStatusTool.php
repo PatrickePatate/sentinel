@@ -2,6 +2,8 @@
 
 namespace App\Ssh\Tools;
 
+use Illuminate\Contracts\JsonSchema\JsonSchema;
+
 class ServiceStatusTool implements Tool
 {
     public function name(): string
@@ -14,13 +16,10 @@ class ServiceStatusTool implements Tool
         return 'Show the systemd status of one service (read-only).';
     }
 
-    public function inputSchema(): array
+    public function schema(JsonSchema $schema): array
     {
         return [
-            'type' => 'object',
-            'properties' => ['service' => ['type' => 'string', 'description' => 'Unit name, e.g. nginx or php8.5-fpm']],
-            'required' => ['service'],
-            'additionalProperties' => false,
+            'service' => $schema->string()->description('Unit name, e.g. nginx or php8.5-fpm')->required(),
         ];
     }
 

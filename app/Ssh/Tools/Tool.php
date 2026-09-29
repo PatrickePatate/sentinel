@@ -2,6 +2,9 @@
 
 namespace App\Ssh\Tools;
 
+use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\JsonSchema\Types\Type;
+
 interface Tool
 {
     public function name(): string;
@@ -9,11 +12,11 @@ interface Tool
     public function description(): string;
 
     /**
-     * JSON schema of the arguments the model may pass.
+     * Arguments the model may pass (Laravel AI JSON schema types).
      *
-     * @return array<string, mixed>
+     * @return array<string, Type>
      */
-    public function inputSchema(): array;
+    public function schema(JsonSchema $schema): array;
 
     /**
      * Builds the fixed, read-only shell command. Must validate and escape every
