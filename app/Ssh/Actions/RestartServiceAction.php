@@ -7,6 +7,8 @@ use Illuminate\Contracts\JsonSchema\JsonSchema;
 
 class RestartServiceAction implements ActionTool
 {
+    use UsesSudo;
+
     public function name(): string
     {
         return 'restart_service';
@@ -35,6 +37,6 @@ class RestartServiceAction implements ActionTool
             throw new InvalidToolArguments('Service is not on the restart allowlist.');
         }
 
-        return 'systemctl restart -- '.escapeshellarg($service).' 2>&1';
+        return $this->sudo().'systemctl restart -- '.escapeshellarg($service).' 2>&1';
     }
 }

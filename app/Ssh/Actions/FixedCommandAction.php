@@ -6,6 +6,8 @@ use App\Ssh\Tools\FixedCommandTool;
 
 class FixedCommandAction extends FixedCommandTool implements ActionTool
 {
+    use UsesSudo;
+
     public function __construct(
         string $name,
         string $description,
@@ -18,5 +20,10 @@ class FixedCommandAction extends FixedCommandTool implements ActionTool
     public function risk(): RiskLevel
     {
         return $this->risk;
+    }
+
+    public function command(array $arguments): string
+    {
+        return $this->sudo().parent::command($arguments);
     }
 }

@@ -141,3 +141,32 @@ it('caps autonomous actions per scan', function () {
 
     expect($first)->toBe('done')->and($second)->toStartWith('PENDING_HUMAN_APPROVAL')->and($transport->commands)->toHaveCount(1);
 });
+
+it('upgrades a single installed package only after approval, without installing or removing others', function () {
+    $transport = recordingTransport();
+    $machine = Machine::factory()->create(['autonomy_enabled' => true]);
+    $executor = actions($transport);
+
+    expect($executor->request($machine, 'update_package', ['package' => 'curl'], null, 'patch curl'))->toStartWith('PENDING_HUMAN_APPROVAL')
+        ->and($transport->commands)->toBeEmpty();
+
+    $executor->approve(PendingAction::first());
+
+    expect($transport->commands[0])->toBe("env DEBIAN_FRONTEND=noninteractive apt-get install --only-upgrade --no-remove -y -o Dpkg::Options::=--force-confold -- 'curl' 2>&1");
+});
+
+it('rejects malicious or protected package names', function (string $package) {
+    $transport = recordingTransport();
+
+    expect(actions($transport)->request(Machine::factory()->create(), 'update_package', ['package' => $package], null, 'x'))->toStartWith('ERROR')
+        ->and($transport->commands)->toBeEmpty()
+        ->and(PendingAction::count())->toBe(0);
+})->with(['curl; reboot', '$(id)', '--purge', 'Curl', 'a b', '', 'openssh-server', 'libc6', 'linux-image-6.8.0', 'systemd-sysv', 'mysql-server']);
+
+it('prefixes actions with non-interactive sudo when enabled', function () {
+    config(['sentinel.actions.use_sudo' => true, 'sentinel.actions.restartable_services' => ['nginx']]);
+
+    expect(ActionCatalog::default()->get('clean_apt_cache')->command([]))->toStartWith('sudo -n apt-get clean')
+        ->and(ActionCatalog::default()->get('restart_service')->command(['service' => 'nginx']))->toStartWith('sudo -n systemctl restart')
+        ->and(ActionCatalog::default()->get('update_package')->command(['package' => 'curl']))->toStartWith('sudo -n env DEBIAN_FRONTEND');
+});

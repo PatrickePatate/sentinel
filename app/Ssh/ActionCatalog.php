@@ -6,6 +6,7 @@ use App\Ssh\Actions\ActionTool;
 use App\Ssh\Actions\FixedCommandAction;
 use App\Ssh\Actions\RestartServiceAction;
 use App\Ssh\Actions\RiskLevel;
+use App\Ssh\Actions\UpdatePackageAction;
 use InvalidArgumentException;
 
 /**
@@ -30,6 +31,7 @@ class ActionCatalog
             new FixedCommandAction('vacuum_journal', 'Delete systemd journal entries older than 14 days.', 'journalctl --vacuum-time=14d 2>&1', RiskLevel::Low),
             new FixedCommandAction('clean_apt_cache', 'Clear the apt package download cache.', 'apt-get clean 2>&1', RiskLevel::Low),
             new RestartServiceAction,
+            new UpdatePackageAction,
         ]);
     }
 
