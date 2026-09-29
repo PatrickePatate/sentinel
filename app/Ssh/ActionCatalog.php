@@ -3,7 +3,13 @@
 namespace App\Ssh;
 
 use App\Ssh\Actions\ActionTool;
+use App\Ssh\Actions\Fail2banCreateJailAction;
+use App\Ssh\Actions\Fail2banRemoveCustomAction;
+use App\Ssh\Actions\Fail2banUnbanAction;
+use App\Ssh\Actions\Fail2banWriteFilterAction;
 use App\Ssh\Actions\FixedCommandAction;
+use App\Ssh\Actions\ReloadServiceAction;
+use App\Ssh\Actions\ResetFailedUnitAction;
 use App\Ssh\Actions\RestartServiceAction;
 use App\Ssh\Actions\RiskLevel;
 use App\Ssh\Actions\UpdatePackageAction;
@@ -28,9 +34,16 @@ class ActionCatalog
     public static function default(): self
     {
         return new self([
-            new FixedCommandAction('vacuum_journal', 'Delete systemd journal entries older than 14 days.', 'journalctl --vacuum-time=14d 2>&1', RiskLevel::Low),
-            new FixedCommandAction('clean_apt_cache', 'Clear the apt package download cache.', 'apt-get clean 2>&1', RiskLevel::Low),
+            new FixedCommandAction('vacuum_journal', 'Delete systemd journal entries older than 14 days.', '{sudo}journalctl --vacuum-time=14d 2>&1', RiskLevel::Low, ['/usr/bin/journalctl --vacuum-time=14d']),
+            new FixedCommandAction('clean_apt_cache', 'Clear the apt package download cache.', '{sudo}apt-get clean 2>&1', RiskLevel::Low, ['/usr/bin/apt-get clean']),
+            new FixedCommandAction('renew_certificates', 'Run certbot renew: renews Let\'s Encrypt certificates that are close to expiry (existing deploy hooks apply). Needs human approval.', '{sudo}certbot renew 2>&1', RiskLevel::Medium, ['/usr/bin/certbot renew']),
+            new ResetFailedUnitAction,
+            new ReloadServiceAction,
             new RestartServiceAction,
+            new Fail2banUnbanAction,
+            new Fail2banWriteFilterAction,
+            new Fail2banCreateJailAction,
+            new Fail2banRemoveCustomAction,
             new UpdatePackageAction,
         ]);
     }

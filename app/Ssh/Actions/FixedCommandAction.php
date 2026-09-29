@@ -6,24 +6,18 @@ use App\Ssh\Tools\FixedCommandTool;
 
 class FixedCommandAction extends FixedCommandTool implements ActionTool
 {
-    use UsesSudo;
-
     public function __construct(
         string $name,
         string $description,
         string $command,
         private RiskLevel $risk,
+        array $sudoRules = [],
     ) {
-        parent::__construct($name, $description, $command);
+        parent::__construct($name, $description, $command, $sudoRules);
     }
 
     public function risk(): RiskLevel
     {
         return $this->risk;
-    }
-
-    public function command(array $arguments): string
-    {
-        return $this->sudo().parent::command($arguments);
     }
 }

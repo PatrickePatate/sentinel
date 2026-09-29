@@ -16,7 +16,11 @@ beforeEach(function () {
 
 it('answers every catalog tool without a command-not-found', function () {
     $machine = Machine::where('name', 'app-prod-02')->first();
-    $commands = collect(ToolCatalog::default()->all())->map(fn ($t) => $t->command($t->name() === 'service_status' ? ['service' => 'nginx'] : []));
+    $commands = collect(ToolCatalog::default()->all())->map(fn ($t) => $t->command(match ($t->name()) {
+        'service_status' => ['service' => 'nginx'],
+        'fail2ban_test_regex' => ['log' => 'sshd', 'failregex' => '^Failed from <HOST>'],
+        default => [],
+    }));
 
     foreach ($commands as $command) {
         expect((new FakeTransport)->run($machine, $command, 5)->exitCode)->not->toBe(127, $command);

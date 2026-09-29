@@ -1,5 +1,6 @@
 <?php
 
+use App\Ai\Agents\SysadminAgent;
 use App\Models\AgentRun;
 use App\Models\Machine;
 use App\Models\PendingAction;
@@ -8,7 +9,9 @@ use App\Ssh\ActionExecutor;
 use App\Ssh\AuditTrail;
 use App\Ssh\CommandResult;
 use App\Ssh\Gate\RiskGate;
+use App\Ssh\SafeExecutor;
 use App\Ssh\SshTransport;
+use App\Ssh\ToolCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Ai\Classification;
 use Laravel\Ai\Responses\Data\BooleanAnswer;
@@ -152,7 +155,7 @@ it('upgrades a single installed package only after approval, without installing 
 
     $executor->approve(PendingAction::first());
 
-    expect($transport->commands[0])->toBe("env DEBIAN_FRONTEND=noninteractive apt-get install --only-upgrade --no-remove -y -o Dpkg::Options::=--force-confold -- 'curl' 2>&1");
+    expect($transport->commands[0])->toBe("/usr/local/sbin/sentinel-upgrade-package 'curl' 2>&1");
 });
 
 it('rejects malicious or protected package names', function (string $package) {
@@ -168,5 +171,68 @@ it('prefixes actions with non-interactive sudo when enabled', function () {
 
     expect(ActionCatalog::default()->get('clean_apt_cache')->command([]))->toStartWith('sudo -n apt-get clean')
         ->and(ActionCatalog::default()->get('restart_service')->command(['service' => 'nginx']))->toStartWith('sudo -n systemctl restart')
-        ->and(ActionCatalog::default()->get('update_package')->command(['package' => 'curl']))->toStartWith('sudo -n env DEBIAN_FRONTEND');
+        ->and(ActionCatalog::default()->get('update_package')->command(['package' => 'curl']))->toStartWith('sudo -n /usr/local/sbin/sentinel-upgrade-package');
+});
+
+it('gates the new service, certificate and fail2ban actions', function () {
+    config(['sentinel.actions.restartable_services' => ['nginx'], 'sentinel.actions.reloadable_services' => ['php8.3-fpm']]);
+    $transport = recordingTransport();
+    $machine = Machine::factory()->create();
+    $executor = actions($transport);
+
+    $held = [
+        ['reload_service', ['service' => 'php8.3-fpm']],
+        ['renew_certificates', []],
+        ['fail2ban_unban', ['jail' => 'sshd', 'ip' => '203.0.113.7']],
+        ['fail2ban_write_filter', ['name' => 'nginx-login', 'failregex' => '^<HOST> .* "POST /login']],
+        ['fail2ban_create_jail', ['name' => 'nginx-login', 'filter' => 'nginx-login', 'log' => 'nginx-access', 'maxretry' => 5, 'findtime' => 600, 'bantime' => 3600]],
+        ['fail2ban_remove_custom', ['name' => 'nginx-login']],
+    ];
+
+    foreach ($held as [$action, $args]) {
+        expect($executor->request($machine, $action, $args, null, 'x'))->toStartWith('PENDING_HUMAN_APPROVAL');
+    }
+
+    expect($transport->commands)->toBeEmpty()->and(PendingAction::count())->toBe(6);
+});
+
+it('rejects invalid arguments for the new actions', function (string $action, array $args) {
+    config(['sentinel.actions.restartable_services' => ['nginx'], 'sentinel.actions.reloadable_services' => ['nginx']]);
+    $transport = recordingTransport();
+
+    expect(actions($transport)->request(Machine::factory()->create(), $action, $args, null, 'x'))->toStartWith('ERROR')
+        ->and($transport->commands)->toBeEmpty();
+})->with([
+    'reload: not allowlisted' => ['reload_service', ['service' => 'mysql']],
+    'reset-failed: not allowlisted' => ['reset_failed_unit', ['service' => 'cron']],
+    'unban: bad ip' => ['fail2ban_unban', ['jail' => 'sshd', 'ip' => '1.2.3.4; id']],
+    'unban: bad jail' => ['fail2ban_unban', ['jail' => 'sshd;id', 'ip' => '1.2.3.4']],
+    'filter: no HOST' => ['fail2ban_write_filter', ['name' => 'x1', 'failregex' => '^nothing here$']],
+    'filter: 6 lines' => ['fail2ban_write_filter', ['name' => 'x1', 'failregex' => implode("\n", array_fill(0, 6, '^<HOST> x'))]],
+    'filter: leading space on 2nd line' => ['fail2ban_write_filter', ['name' => 'x1', 'failregex' => "^<HOST> ok\n ^<HOST> x"]],
+    'filter: control char' => ['fail2ban_write_filter', ['name' => 'x1', 'failregex' => "^<HOST> \x01"]],
+    'filter: traversal name' => ['fail2ban_write_filter', ['name' => '../x', 'failregex' => '^<HOST> x']],
+    'jail: unknown log' => ['fail2ban_create_jail', ['name' => 'a1', 'filter' => 'a1', 'log' => '/etc/shadow', 'maxretry' => 5, 'findtime' => 600, 'bantime' => 3600]],
+    'jail: ban too long' => ['fail2ban_create_jail', ['name' => 'a1', 'filter' => 'a1', 'log' => 'sshd', 'maxretry' => 5, 'findtime' => 600, 'bantime' => 99999999]],
+    'jail: maxretry too low' => ['fail2ban_create_jail', ['name' => 'a1', 'filter' => 'a1', 'log' => 'sshd', 'maxretry' => 1, 'findtime' => 600, 'bantime' => 3600]],
+    'jail: extra action key ignored but bad type' => ['fail2ban_create_jail', ['name' => 'a1', 'filter' => 'a1', 'log' => 'sshd', 'maxretry' => '5; id', 'findtime' => 600, 'bantime' => 3600]],
+    'remove: traversal' => ['fail2ban_remove_custom', ['name' => '../../etc']],
+]);
+
+it('tests a regex with fail2ban-regex on allowlisted logs only, without sudo', function () {
+    $transport = recordingTransport();
+    $machine = Machine::factory()->create();
+    $executor = new SafeExecutor(ToolCatalog::default(), $transport);
+
+    $executor->execute($machine, 'fail2ban_test_regex', ['log' => 'sshd', 'failregex' => '^Failed password for .* from <HOST>']);
+    $rejected = $executor->execute($machine, 'fail2ban_test_regex', ['log' => '/etc/shadow', 'failregex' => '^<HOST>']);
+
+    expect($transport->commands)->toBe(["timeout 15 fail2ban-regex '/var/log/auth.log' '^Failed password for .* from <HOST>' 2>&1 | tail -n 40"])
+        ->and($rejected)->toStartWith('ERROR');
+});
+
+it('lets the agent see the new tools and actions', function () {
+    $names = collect(iterator_to_array((new SysadminAgent(Machine::factory()->create()))->tools(), false))->map->name()->all();
+
+    expect($names)->toContain('fail2ban_test_regex', 'fail2ban_write_filter', 'fail2ban_create_jail', 'reload_service', 'reset_failed_unit', 'renew_certificates', 'fail2ban_unban');
 });

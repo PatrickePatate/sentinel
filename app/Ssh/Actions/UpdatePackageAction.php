@@ -2,12 +2,15 @@
 
 namespace App\Ssh\Actions;
 
+use App\Ssh\Provisioning\RequiresSudo;
 use App\Ssh\Tools\InvalidToolArguments;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 
-class UpdatePackageAction implements ActionTool
+class UpdatePackageAction implements ActionTool, RequiresSudo
 {
     use UsesSudo;
+
+    public const WRAPPER = '/usr/local/sbin/sentinel-upgrade-package';
 
     public function name(): string
     {
@@ -43,7 +46,12 @@ class UpdatePackageAction implements ActionTool
             }
         }
 
-        return $this->sudo().'env DEBIAN_FRONTEND=noninteractive apt-get install --only-upgrade --no-remove -y'
-            .' -o Dpkg::Options::=--force-confold -- '.escapeshellarg($package).' 2>&1';
+        // The root-owned wrapper re-validates the name and applies apt's safe flags itself.
+        return $this->sudo().self::WRAPPER.' '.escapeshellarg($package).' 2>&1';
+    }
+
+    public function sudoRules(): array
+    {
+        return [self::WRAPPER.' *'];
     }
 }

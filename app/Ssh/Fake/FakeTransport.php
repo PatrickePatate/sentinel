@@ -85,6 +85,65 @@ class FakeTransport implements SshTransport
     {
         $ok = fn (string $out, int $code = 0) => new CommandResult($out, $code);
 
+        // Actions run through `sudo -n` in production; the simulated machine accepts them as root.
+        $command = preg_replace('/(^|\|\| |\| )sudo -n /', '$1', $command);
+
+        if (preg_match("/^systemctl reload -- '([^']+)' 2>&1$/", $command, $m)) {
+            $svc = $s['services'][$m[1]] ?? null;
+
+            return $svc && $svc['state'] === 'active'
+                ? [$ok(''), $s]
+                : [$ok("Failed to reload {$m[1]}.service: Unit {$m[1]}.service is not active, cannot reload.\n", 1), $s];
+        }
+
+        if (preg_match("/^systemctl reset-failed -- '([^']+)' 2>&1$/", $command, $m)) {
+            if (isset($s['services'][$m[1]]) && $s['services'][$m[1]]['state'] === 'failed') {
+                $s['services'][$m[1]]['state'] = 'inactive';
+                $s['services'][$m[1]]['failure'] = '';
+            }
+
+            return [$ok(''), $s];
+        }
+
+        if (preg_match("#^/usr/local/sbin/sentinel-upgrade-package '([^']+)' 2>&1$#", $command, $m)) {
+            $before = count($s['upgradable']);
+            $s['upgradable'] = array_values(array_filter($s['upgradable'], fn ($p) => $p[0] !== $m[1]));
+
+            return $before === count($s['upgradable'])
+                ? [$ok("package {$m[1]} is not installed or already up to date\n", 4), $s]
+                : [$ok("Reading package lists...\nThe following packages will be upgraded:\n  {$m[1]}\n1 upgraded, 0 newly installed, 0 to remove.\n"), $s];
+        }
+
+        if ($command === 'certbot renew 2>&1') {
+            return [$ok("Processing /etc/letsencrypt/renewal/example.org.conf\nCert not yet due for renewal\nNo renewals were attempted.\n"), $s];
+        }
+
+        if (preg_match("#^/usr/local/sbin/sentinel-fail2ban-unban '([^']+)' '([^']+)' 2>&1$#", $command, $m)) {
+            return [$ok("1\n"), $s];
+        }
+
+        if (str_starts_with($command, 'timeout 15 fail2ban-regex')) {
+            return [$ok("Running tests\n=============\n\nResults\n=======\n\nFailregex: 12 total\nLines: 4210 lines, 0 ignored, 12 matched, 4198 missed\n"), $s];
+        }
+
+        if (preg_match("#sentinel-fail2ban-filter '([^']+)' 2>&1$#", $command, $m)) {
+            $s['f2b'][$m[1]]['filter'] = true;
+
+            return [$ok("filter sentinel-{$m[1]} installed\n"), $s];
+        }
+
+        if (preg_match("#^/usr/local/sbin/sentinel-fail2ban-jail '([^']+)' '([^']+)' #", $command, $m)) {
+            $s['f2b'][$m[1]]['jail'] = true;
+
+            return [$ok("jail sentinel-{$m[1]} installed and loaded\n"), $s];
+        }
+
+        if (preg_match("#^/usr/local/sbin/sentinel-fail2ban-remove '([^']+)' 2>&1$#", $command, $m)) {
+            unset($s['f2b'][$m[1]]);
+
+            return [$ok("removed sentinel-{$m[1]}\n"), $s];
+        }
+
         if (preg_match("/^systemctl restart -- '([^']+)' 2>&1$/", $command, $m)) {
             return $this->restart($m[1], $s);
         }

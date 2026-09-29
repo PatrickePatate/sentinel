@@ -2,16 +2,16 @@
 
 namespace App\Ssh\Actions;
 
-class RestartServiceAction extends SystemctlServiceAction
+class ReloadServiceAction extends SystemctlServiceAction
 {
     public function name(): string
     {
-        return 'restart_service';
+        return 'reload_service';
     }
 
     public function description(): string
     {
-        return 'Restart one systemd service. Only services on the configured allowlist. Always needs human approval.';
+        return 'Reload the configuration of one systemd service without stopping it. Only services on the reload allowlist. Needs human approval.';
     }
 
     public function risk(): RiskLevel
@@ -21,11 +21,11 @@ class RestartServiceAction extends SystemctlServiceAction
 
     protected function verb(): string
     {
-        return 'restart';
+        return 'reload';
     }
 
     protected function allowedServices(): array
     {
-        return self::list('restartable_services');
+        return self::list('reloadable_services');
     }
 }

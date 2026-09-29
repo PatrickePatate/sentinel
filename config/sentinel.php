@@ -23,6 +23,16 @@ return [
         'max_autonomous_actions_per_run' => 3,
     ],
 
+    'fail2ban' => [
+        // Log files the agent may test regexes against / attach jails to (key => absolute path).
+        'logs' => [
+            'sshd' => '/var/log/auth.log',
+            'syslog' => '/var/log/syslog',
+            'nginx-access' => '/var/log/nginx/access.log',
+            'nginx-error' => '/var/log/nginx/error.log',
+        ],
+    ],
+
     'actions' => [
         'use_sudo' => env('SENTINEL_USE_SUDO', true),
 
@@ -32,6 +42,7 @@ return [
             'mysql-*', 'mariadb-*', 'postgresql*', 'sudo', 'apt', 'dpkg',
         ],
 
+        'reloadable_services' => array_filter(explode(',', (string) env('SENTINEL_RELOADABLE_SERVICES', ''))),
         'restartable_services' => array_filter(explode(',', (string) env('SENTINEL_RESTARTABLE_SERVICES', ''))),
     ],
 ];

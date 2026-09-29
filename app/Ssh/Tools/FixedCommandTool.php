@@ -2,18 +2,26 @@
 
 namespace App\Ssh\Tools;
 
+use App\Ssh\Provisioning\RequiresSudo;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 
 /**
  * A read-only tool that maps to a constant command and takes no arguments.
  */
-class FixedCommandTool implements Tool
+class FixedCommandTool implements RequiresSudo, Tool
 {
     public function __construct(
         private string $name,
         private string $description,
         private string $command,
+        /** @var list<string> */
+        private array $sudoRules = [],
     ) {}
+
+    public function sudoRules(): array
+    {
+        return $this->sudoRules;
+    }
 
     public function name(): string
     {
@@ -36,6 +44,6 @@ class FixedCommandTool implements Tool
             throw new InvalidToolArguments("Tool {$this->name} takes no arguments.");
         }
 
-        return $this->command;
+        return str_replace('{sudo}', config('sentinel.actions.use_sudo') ? 'sudo -n ' : '', $this->command);
     }
 }
