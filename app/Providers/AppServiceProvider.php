@@ -12,6 +12,7 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->app->register(SharpServiceProvider::class);
         $this->app->singleton(ToolCatalog::class, fn () => ToolCatalog::default());
         $this->app->singleton(ActionCatalog::class, fn () => ActionCatalog::default());
         $this->app->bind(SshTransport::class, PhpseclibTransport::class);

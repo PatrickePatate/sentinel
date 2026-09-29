@@ -29,13 +29,13 @@ class PhpseclibTransport implements SshTransport
 
     private function verifyHostKey(SSH2 $ssh, Machine $machine): void
     {
-        $fingerprint = $ssh->getServerPublicHostKey()
-            ? $this->fingerprint($ssh->getServerPublicHostKey())
-            : null;
+        $publicKey = $ssh->getServerPublicHostKey();
 
-        if ($fingerprint === null) {
+        if (! $publicKey) {
             throw new RuntimeException("Could not read host key of {$machine->name}.");
         }
+
+        $fingerprint = HostKeyFingerprint::of($publicKey);
 
         if ($machine->host_key_fingerprint === null) {
             throw new RuntimeException("Host key of {$machine->name} is not pinned yet ({$fingerprint}). Pin it before use.");
@@ -44,10 +44,5 @@ class PhpseclibTransport implements SshTransport
         if (! hash_equals($machine->host_key_fingerprint, $fingerprint)) {
             throw new RuntimeException("Host key mismatch for {$machine->name}: refusing to connect.");
         }
-    }
-
-    private function fingerprint(string $publicHostKey): string
-    {
-        return 'SHA256:'.rtrim(base64_encode(hash('sha256', $publicHostKey, true)), '=');
     }
 }

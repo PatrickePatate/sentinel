@@ -3,8 +3,8 @@
 namespace App\Console\Commands;
 
 use App\Models\Machine;
+use App\Ssh\HostKeyFingerprint;
 use Illuminate\Console\Command;
-use phpseclib3\Net\SSH2;
 
 use function Laravel\Prompts\confirm;
 
@@ -18,16 +18,14 @@ class PinHostKey extends Command
     {
         $machine = Machine::findOrFail($this->argument('machine'));
 
-        $ssh = new SSH2($machine->host, $machine->port, 10);
-        $key = $ssh->getServerPublicHostKey();
+        $fingerprint = HostKeyFingerprint::fetch($machine);
 
-        if (! $key) {
+        if (! $fingerprint) {
             $this->error('Could not read the host key.');
 
             return self::FAILURE;
         }
 
-        $fingerprint = 'SHA256:'.rtrim(base64_encode(hash('sha256', $key, true)), '=');
         $this->line("Host key of {$machine->name}: {$fingerprint}");
 
         if (confirm('Verify it out-of-band, then pin it?', false)) {
