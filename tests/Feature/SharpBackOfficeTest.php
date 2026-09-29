@@ -125,7 +125,7 @@ it('requires authentication for the back-office', function () {
 it('groups the menu in sections with resolvable Lucide icons', function () {
     $menu = (new SharpMenu)->build()->items();
 
-    expect($menu)->toHaveCount(3)->each(fn ($item) => $item->toBeInstanceOf(SharpMenuItemSection::class));
+    expect($menu)->toHaveCount(4)->each(fn ($item) => $item->toBeInstanceOf(SharpMenuItemSection::class));
 
     foreach (['server', 'scan-search', 'hand', 'clipboard-list'] as $icon) {
         expect(svg("lucide-{$icon}")->toHtml())->toContain('<svg');

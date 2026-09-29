@@ -15,6 +15,20 @@ return [
         'scans_per_hour_per_user' => 6,
     ],
 
+    'scheduling' => [
+        // Choices offered per machine for autonomous scans (minutes => label). Kept coarse: every scan costs LLM calls.
+        'frequencies' => [
+            0 => 'Manual only',
+            60 => 'Every hour',
+            180 => 'Every 3 hours',
+            360 => 'Every 6 hours',
+            720 => 'Every 12 hours',
+            1440 => 'Every day',
+            10080 => 'Every week',
+        ],
+        'objective' => 'Run a security and health audit',
+    ],
+
     'agent' => [
         'provider' => env('SENTINEL_AI_PROVIDER', 'anthropic'),
         'model' => env('SENTINEL_AI_MODEL'),

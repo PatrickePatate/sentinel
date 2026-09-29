@@ -17,6 +17,7 @@ class MachineList extends SharpEntityList
             ->addField(EntityListField::make('address')->setLabel('Address')->setHtml(false))
             ->addField(EntityListField::make('environment')->setLabel('Environment')->setHtml(false))
             ->addField(EntityListField::make('host_key')->setLabel('Host key')->setHtml(false))
+            ->addField(EntityListField::make('schedule')->setLabel('Scans')->setHtml(false))
             ->addField(EntityListField::make('autonomy')->setLabel('Autonomy')->setHtml(false));
     }
 
@@ -46,6 +47,7 @@ class MachineList extends SharpEntityList
         return $this
             ->setCustomTransformer('address', fn ($value, Machine $machine) => "{$machine->username}@{$machine->host}:{$machine->port}")
             ->setCustomTransformer('host_key', fn ($value, Machine $machine) => $machine->host_key_fingerprint ? 'pinned' : 'NOT PINNED')
+            ->setCustomTransformer('schedule', fn ($value, Machine $machine) => $machine->scan_interval_minutes ? (config('sentinel.scheduling.frequencies')[$machine->scan_interval_minutes] ?? 'custom') : 'manual')
             ->setCustomTransformer('autonomy', fn ($value, Machine $machine) => $machine->autonomy_enabled ? 'enabled' : 'off')
             ->transform($machines->paginate(30));
     }

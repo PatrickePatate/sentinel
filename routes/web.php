@@ -1,7 +1,9 @@
 <?php
 
+use App\Http\Controllers\TelegramWebhookController;
 use App\Http\Middleware\AllowFramingFromSelfOnly;
 use App\Livewire\MachineChat;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -16,3 +18,9 @@ Route::get('/', function () {
 Route::middleware(['sharp_common', 'sharp_auth', AllowFramingFromSelfOnly::class])
     ->get('/chat/{machine}', MachineChat::class)
     ->name('sentinel.chat');
+
+// Telegram button presses. Not behind Sharp auth or CSRF: authenticated by the per-channel secret header instead.
+Route::post('/telegram/webhook/{channel}', TelegramWebhookController::class)
+    ->withoutMiddleware([PreventRequestForgery::class])
+    ->middleware('throttle:60,1')
+    ->name('sentinel.telegram.webhook');

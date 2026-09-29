@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Ai\ScanRunner;
 use App\Models\Machine;
+use App\Notifications\Notifier;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Auth;
@@ -16,7 +17,7 @@ class RunScan implements ShouldQueue
 
     public int $tries = 1;
 
-    public function __construct(public int $machineId, public string $objective, public ?int $userId = null) {}
+    public function __construct(public int $machineId, public string $objective, public ?int $userId = null, public string $trigger = 'manual') {}
 
     public function handle(ScanRunner $runner): void
     {
@@ -25,6 +26,8 @@ class RunScan implements ShouldQueue
             Auth::onceUsingId($this->userId);
         }
 
-        $runner->run(Machine::findOrFail($this->machineId), $this->objective);
+        $run = $runner->run(Machine::findOrFail($this->machineId), $this->objective, trigger: $this->trigger);
+
+        app(Notifier::class)->scanFinished($run->load('machine'));
     }
 }

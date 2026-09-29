@@ -14,7 +14,7 @@ class Machine extends Model
     use HasFactory;
 
     /** @var list<string> */
-    protected $fillable = ['name', 'host', 'port', 'username', 'private_key', 'passphrase', 'host_key_fingerprint', 'environment', 'autonomy_enabled'];
+    protected $fillable = ['name', 'host', 'port', 'username', 'private_key', 'passphrase', 'host_key_fingerprint', 'environment', 'autonomy_enabled', 'scan_interval_minutes'];
 
     protected function casts(): array
     {
@@ -22,6 +22,7 @@ class Machine extends Model
             'private_key' => 'encrypted',
             'passphrase' => 'encrypted',
             'revoked_at' => 'datetime',
+            'last_scan_at' => 'datetime',
         ];
     }
 

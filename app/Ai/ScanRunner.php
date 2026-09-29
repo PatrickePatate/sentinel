@@ -11,9 +11,9 @@ use Throwable;
 
 class ScanRunner
 {
-    public function run(Machine $machine, string $objective, ?string $provider = null, ?string $model = null): AgentRun
+    public function run(Machine $machine, string $objective, ?string $provider = null, ?string $model = null, string $trigger = 'manual'): AgentRun
     {
-        return $this->execute($machine, $objective, "Machine: {$machine->name} ({$machine->environment}).\nObjective: {$objective}", [], $provider, $model);
+        return $this->execute($machine, $objective, "Machine: {$machine->name} ({$machine->environment}).\nObjective: {$objective}", [], $provider, $model, trigger: $trigger, scan: true);
     }
 
     /**
@@ -29,7 +29,7 @@ class ScanRunner
     }
 
     /** @param list<array{role: string, content: string}> $history */
-    private function execute(Machine $machine, string $objective, string $prompt, array $history, ?string $provider = null, ?string $model = null, ?Closure $onStream = null): AgentRun
+    private function execute(Machine $machine, string $objective, string $prompt, array $history, ?string $provider = null, ?string $model = null, ?Closure $onStream = null, string $trigger = 'chat', bool $scan = false): AgentRun
     {
         $provider ??= config('sentinel.agent.provider');
         $model ??= config('sentinel.agent.model');
@@ -38,10 +38,11 @@ class ScanRunner
             'machine_id' => $machine->id,
             'provider' => $provider,
             'objective' => $objective,
+            'trigger' => $trigger,
         ]);
 
         try {
-            $agent = new SysadminAgent($machine, $run, $objective, $history);
+            $agent = new SysadminAgent($machine, $run, $objective, $history, requiresVerdict: $scan);
 
             if ($onStream) {
                 $stream = $agent->stream($prompt, provider: $provider, model: $model);

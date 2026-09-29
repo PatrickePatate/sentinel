@@ -14,6 +14,7 @@ use Code16\Sharp\Form\Layout\FormLayoutColumn;
 use Code16\Sharp\Form\SharpForm;
 use Code16\Sharp\Utils\Fields\FieldsContainer;
 use Illuminate\Support\Arr;
+use Illuminate\Validation\Rule;
 
 class MachineForm extends SharpForm
 {
@@ -35,6 +36,10 @@ class MachineForm extends SharpForm
                 'production' => 'Production',
                 'staging' => 'Staging',
             ])->setLabel('Environment')->setDisplayAsDropdown())
+            ->addField(SharpFormSelectField::make('scan_interval_minutes', config('sentinel.scheduling.frequencies'))
+                ->setLabel('Autonomous scan frequency')
+                ->setHelpMessage('The agent scans this machine on its own at this pace (needs the scheduler and a queue worker). Suspicious results are sent to the notification channels.')
+                ->setDisplayAsDropdown())
             ->addField(SharpFormCheckField::make('autonomy_enabled', 'Let the agent run low-risk corrective actions on its own (after a Jev risk check)'));
     }
 
@@ -47,13 +52,16 @@ class MachineForm extends SharpForm
             ->withField('private_key')
             ->withField('passphrase')
             ->withField('environment')
+            ->withField('scan_interval_minutes')
             ->withField('autonomy_enabled')
         );
     }
 
     public function find(mixed $id): array
     {
-        return $this->transform(Machine::findOrFail($id));
+        $machine = Machine::findOrFail($id);
+
+        return $this->transform($machine->setAttribute('scan_interval_minutes', (int) $machine->scan_interval_minutes));
     }
 
     public function update(mixed $id, array $data)
@@ -75,6 +83,7 @@ class MachineForm extends SharpForm
             'passphrase' => ['nullable', 'string'],
             'environment' => ['required', 'in:production,staging'],
             'autonomy_enabled' => ['boolean'],
+            'scan_interval_minutes' => ['nullable', 'integer', Rule::in(array_keys(config('sentinel.scheduling.frequencies')))],
         ];
 
         $this->validate($data, $rules);
@@ -87,6 +96,8 @@ class MachineForm extends SharpForm
                 unset($validated[$secret]);
             }
         }
+
+        $validated['scan_interval_minutes'] = ((int) ($validated['scan_interval_minutes'] ?? 0)) ?: null;
 
         $machine->fill($validated);
 

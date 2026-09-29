@@ -5,6 +5,7 @@ namespace App\Ssh;
 use App\Models\AgentRun;
 use App\Models\Machine;
 use App\Models\PendingAction;
+use App\Notifications\Notifier;
 use App\Ssh\Gate\GateVerdict;
 use App\Ssh\Gate\RiskGate;
 use App\Ssh\Tools\InvalidToolArguments;
@@ -66,6 +67,7 @@ class ActionExecutor
                 'reason' => $decision->reason,
             ]);
             $this->audit->record($machine, $run, 'action_pending', $actionName, $context + ['pending_action_id' => $pending->id]);
+            app(Notifier::class)->approvalNeeded($pending);
 
             return "PENDING_HUMAN_APPROVAL (#{$pending->id}): {$decision->reason} Not executed; mention it in your report.";
         }
@@ -78,7 +80,8 @@ class ActionExecutor
      * catalog (never taken from the stored row) and must be identical to the one the human
      * reviewed; the pending -> running transition is atomic so it can only run once.
      */
-    public function approve(PendingAction $pending): string
+    /** @param array<string, mixed> $context Extra audit properties (e.g. who approved, through which channel). */
+    public function approve(PendingAction $pending, array $context = []): string
     {
         $this->claim($pending);
 
@@ -100,17 +103,18 @@ class ActionExecutor
             return 'ERROR: '.$message;
         }
 
-        $output = $this->run($machine, $pending->agentRun, $pending->action, $command, ['approved_pending_action_id' => $pending->id], 'action_approved');
+        $output = $this->run($machine, $pending->agentRun, $pending->action, $command, ['approved_pending_action_id' => $pending->id] + $context, 'action_approved');
         $pending->update(['status' => str_starts_with($output, 'ERROR') ? 'failed' : 'executed', 'output' => $output, 'decided_at' => now()]);
 
         return $output;
     }
 
-    public function reject(PendingAction $pending): void
+    /** @param array<string, mixed> $context */
+    public function reject(PendingAction $pending, array $context = []): void
     {
         $this->claim($pending, 'rejected');
 
-        $this->audit->record($pending->machine, null, 'action_rejected', $pending->action, ['pending_action_id' => $pending->id]);
+        $this->audit->record($pending->machine, null, 'action_rejected', $pending->action, ['pending_action_id' => $pending->id] + $context);
     }
 
     /**

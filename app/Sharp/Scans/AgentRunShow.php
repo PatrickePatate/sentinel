@@ -18,6 +18,8 @@ class AgentRunShow extends SharpShow
             ->addField(SharpShowTextField::make('machine:name')->setLabel('Machine')->setHtml(false))
             ->addField(SharpShowTextField::make('objective')->setLabel('Objective')->setHtml(false))
             ->addField(SharpShowTextField::make('status')->setLabel('Status')->setHtml(false))
+            ->addField(SharpShowTextField::make('severity')->setLabel('Verdict')->setHtml(false))
+            ->addField(SharpShowTextField::make('summary')->setLabel('Summary')->setHtml(false))
             ->addField(SharpShowTextField::make('report')->setLabel('Report')->setHtml(false));
     }
 
@@ -25,7 +27,7 @@ class AgentRunShow extends SharpShow
     {
         $showLayout
             ->addSection('Scan', fn (ShowLayoutSection $section) => $section
-                ->addColumn(6, fn (ShowLayoutColumn $column) => $column->withField('machine:name')->withField('status'))
+                ->addColumn(6, fn (ShowLayoutColumn $column) => $column->withField('machine:name')->withField('status')->withField('severity')->withField('summary'))
                 ->addColumn(6, fn (ShowLayoutColumn $column) => $column->withField('objective')))
             ->addSection('Report', fn (ShowLayoutSection $section) => $section
                 ->addColumn(12, fn (ShowLayoutColumn $column) => $column->withField('report')));
@@ -34,6 +36,8 @@ class AgentRunShow extends SharpShow
     protected function find(mixed $id): array
     {
         return $this
+            ->setCustomTransformer('severity', fn ($value) => $value ?: 'no verdict')
+            ->setCustomTransformer('summary', fn ($value) => $value ?: '—')
             ->setCustomTransformer('report', fn ($value) => $value ?: '(no report yet)')
             ->transform(AgentRun::with('machine')->findOrFail($id));
     }

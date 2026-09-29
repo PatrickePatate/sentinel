@@ -18,6 +18,8 @@ class AgentRunList extends SharpEntityList
             ->addField(EntityListField::make('machine:name')->setLabel('Machine')->setHtml(false))
             ->addField(EntityListField::make('objective')->setLabel('Objective')->setHtml(false))
             ->addField(EntityListField::make('provider')->setLabel('Provider')->setHtml(false))
+            ->addField(EntityListField::make('severity')->setLabel('Severity')->setHtml(false))
+            ->addField(EntityListField::make('trigger')->setLabel('Trigger')->setHtml(false))
             ->addField(EntityListField::make('status')->setLabel('Status')->setHtml(false));
     }
 
@@ -29,6 +31,7 @@ class AgentRunList extends SharpEntityList
     public function getListData(): array|Arrayable
     {
         return $this
+            ->setCustomTransformer('severity', fn ($value) => $value ?: '—')
             ->setCustomTransformer('created_at', fn ($value) => $value ? Carbon::parse($value)->format('Y-m-d H:i') : null)
             ->transform(
                 AgentRun::with('machine')

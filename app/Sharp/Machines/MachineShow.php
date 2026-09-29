@@ -20,6 +20,7 @@ class MachineShow extends SharpShow
             ->addField(SharpShowTextField::make('environment')->setLabel('Environment')->setHtml(false))
             ->addField(SharpShowTextField::make('host_key_fingerprint')->setLabel('Pinned host key')->setHtml(false))
             ->addField(SharpShowTextField::make('autonomy')->setLabel('Autonomous low-risk actions')->setHtml(false))
+            ->addField(SharpShowTextField::make('schedule')->setLabel('Autonomous scans')->setHtml(false))
             ->addField(SharpShowTextField::make('chat')->setLabel(''));
     }
 
@@ -29,7 +30,7 @@ class MachineShow extends SharpShow
             ->addColumn(6, fn (ShowLayoutColumn $column) => $column
                 ->withField('name')->withField('address')->withField('environment'))
             ->addColumn(6, fn (ShowLayoutColumn $column) => $column
-                ->withField('host_key_fingerprint')->withField('autonomy'))
+                ->withField('host_key_fingerprint')->withField('autonomy')->withField('schedule'))
         )->addSection('Chat with the agent', fn (ShowLayoutSection $section) => $section
             ->addColumn(12, fn (ShowLayoutColumn $column) => $column->withField('chat'))
         );
@@ -51,6 +52,9 @@ class MachineShow extends SharpShow
             ->setCustomTransformer('address', fn ($value, Machine $m) => "{$m->username}@{$m->host}:{$m->port}")
             ->setCustomTransformer('host_key_fingerprint', fn ($value) => $value ?: 'NOT PINNED — the agent cannot connect')
             ->setCustomTransformer('chat', fn ($value, Machine $m) => '<iframe src="'.route('sentinel.chat', $m, absolute: false).'" title="Chat with the agent" style="width:100%;height:640px;border:1px solid #e5e7eb;border-radius:8px" loading="lazy"></iframe>')
+            ->setCustomTransformer('schedule', fn ($value, Machine $m) => $m->scan_interval_minutes
+                ? strtolower(config('sentinel.scheduling.frequencies')[$m->scan_interval_minutes] ?? "every {$m->scan_interval_minutes} min").($m->last_scan_at ? ', last queued '.$m->last_scan_at->diffForHumans() : ', not run yet')
+                : 'manual only')
             ->setCustomTransformer('autonomy', fn ($value, Machine $m) => $m->isRevoked() ? 'REVOKED' : ($m->autonomy_enabled ? 'enabled' : 'off'))
             ->transform(Machine::findOrFail($id));
     }
