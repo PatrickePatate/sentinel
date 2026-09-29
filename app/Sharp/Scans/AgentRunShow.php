@@ -19,7 +19,7 @@ class AgentRunShow extends SharpShow
             ->addField(SharpShowTextField::make('objective')->setLabel('Objective')->setHtml(false))
             ->addField(SharpShowTextField::make('severity')->setLabel('Verdict')->setHtml(false))
             ->addField(SharpShowTextField::make('summary')->setLabel('Summary')->setHtml(false))
-            ->addField(SharpShowTextField::make('report')->setLabel('Report')->setHtml(false));
+            ->addField(SharpShowTextField::make('report')->setLabel(''));
     }
 
     public function buildShowConfig(): void
@@ -42,7 +42,7 @@ class AgentRunShow extends SharpShow
         return $this
             ->setCustomTransformer('severity', fn ($value) => $value ?: 'no verdict')
             ->setCustomTransformer('summary', fn ($value) => $value ?: '—')
-            ->setCustomTransformer('report', fn ($value) => $value ?: '(no report yet)')
+            ->setCustomTransformer('report', fn ($value, AgentRun $run) => '<iframe src="'.route('sentinel.scan', $run, absolute: false).'" title="Scan report" style="width:100%;height:70vh;min-height:420px;border:1px solid #e5e7eb;border-radius:8px"></iframe>')
             ->transform(AgentRun::with('machine')->findOrFail($id));
     }
 

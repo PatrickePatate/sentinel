@@ -74,6 +74,7 @@
         .md table { border-collapse: collapse; display: block; overflow-x: auto; font-size: 13px; }
         .md th, .md td { border: 1px solid hsl(var(--border)); padding: .3rem .6rem; text-align: left; }
         .md th { background: hsl(var(--muted)); font-weight: 600; }
+.scan-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .6rem; }
         .status { margin-top: .35rem; font-size: 12px; color: hsl(var(--muted-foreground)); }
         .status:empty { display: none; }
 

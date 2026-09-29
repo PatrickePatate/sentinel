@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Ai\ScanRunner;
 use App\Jobs\RunScan;
 use App\Models\AgentRun;
 use App\Models\Machine;
@@ -34,7 +35,8 @@ class ScanDueMachines extends Command
                     ->update(['last_scan_at' => now()]);
 
                 if ($claimed === 1) {
-                    RunScan::dispatch($machine->id, config('sentinel.scheduling.objective'), null, 'scheduled');
+                    $run = app(ScanRunner::class)->queue($machine, config('sentinel.scheduling.objective'), 'scheduled');
+                    RunScan::dispatch($machine->id, config('sentinel.scheduling.objective'), null, 'scheduled', $run->id);
                     $queued++;
                 }
             });
@@ -46,6 +48,6 @@ class ScanDueMachines extends Command
 
     private function alreadyRunning(Machine $machine): bool
     {
-        return AgentRun::where('machine_id', $machine->id)->where('status', 'running')->where('created_at', '>', now()->subMinutes(30))->exists();
+        return AgentRun::where('machine_id', $machine->id)->whereIn('status', ['queued', 'running'])->where('created_at', '>', now()->subMinutes(30))->exists();
     }
 }

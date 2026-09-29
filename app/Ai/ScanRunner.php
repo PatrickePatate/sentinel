@@ -11,9 +11,21 @@ use Throwable;
 
 class ScanRunner
 {
-    public function run(Machine $machine, string $objective, ?string $provider = null, ?string $model = null, string $trigger = 'manual'): AgentRun
+    /** Creates the run up front so the UI can point at it while the job is still waiting for a worker. */
+    public function queue(Machine $machine, string $objective, string $trigger = 'manual'): AgentRun
     {
-        return $this->execute($machine, $objective, "Machine: {$machine->name} ({$machine->environment}).\nObjective: {$objective}", [], $provider, $model, trigger: $trigger, scan: true);
+        return AgentRun::create([
+            'machine_id' => $machine->id,
+            'provider' => config('sentinel.agent.provider'),
+            'objective' => $objective,
+            'trigger' => $trigger,
+            'status' => 'queued',
+        ]);
+    }
+
+    public function run(Machine $machine, string $objective, ?string $provider = null, ?string $model = null, string $trigger = 'manual', ?AgentRun $run = null): AgentRun
+    {
+        return $this->execute($machine, $objective, "Machine: {$machine->name} ({$machine->environment}).\nObjective: {$objective}", [], $provider, $model, trigger: $trigger, scan: true, run: $run);
     }
 
     /**
@@ -29,7 +41,7 @@ class ScanRunner
     }
 
     /** @param list<array{role: string, content: string}> $history */
-    private function execute(Machine $machine, string $objective, string $prompt, array $history, ?string $provider = null, ?string $model = null, ?Closure $onStream = null, string $trigger = 'chat', bool $scan = false): AgentRun
+    private function execute(Machine $machine, string $objective, string $prompt, array $history, ?string $provider = null, ?string $model = null, ?Closure $onStream = null, string $trigger = 'chat', bool $scan = false, ?AgentRun $run = null): AgentRun
     {
         if ($trigger === 'scheduled') {
             // A scheduled-only model is only used together with its own provider: a model name means nothing on another one.
@@ -41,29 +53,42 @@ class ScanRunner
         $provider ??= config('sentinel.agent.provider');
         $model ??= config('sentinel.agent.model');
 
-        $run = AgentRun::create([
-            'machine_id' => $machine->id,
-            'provider' => $provider,
-            'objective' => $objective,
-            'trigger' => $trigger,
-        ]);
+        if ($run) {
+            $run->update(['provider' => $provider, 'status' => 'running']);
+        } else {
+            $run = AgentRun::create([
+                'machine_id' => $machine->id,
+                'provider' => $provider,
+                'objective' => $objective,
+                'trigger' => $trigger,
+                'status' => 'running',
+            ]);
+        }
 
         try {
             $agent = new SysadminAgent($machine, $run, $objective, $history, requiresVerdict: $scan);
 
-            if ($onStream) {
+            if ($onStream || $scan) {
                 $stream = $agent->stream($prompt, provider: $provider, model: $model);
+                $live = new LiveReport($run);
+
                 foreach ($stream as $event) {
-                    $onStream($event);
+                    if ($scan) {
+                        $live->handle($event);
+                    }
+
+                    if ($onStream) {
+                        $onStream($event);
+                    }
                 }
                 $text = $stream->text;
             } else {
                 $text = $agent->prompt($prompt, provider: $provider, model: $model)->text;
             }
 
-            $run->update(['status' => 'completed', 'report' => $text]);
+            $run->update(['status' => 'completed', 'report' => $text, 'progress' => null]);
         } catch (Throwable $e) {
-            $run->update(['status' => 'failed', 'report' => $e->getMessage()]);
+            $run->update(['status' => 'failed', 'report' => $e->getMessage(), 'progress' => null]);
         }
 
         return $run;

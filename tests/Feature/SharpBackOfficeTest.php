@@ -95,9 +95,12 @@ it('queues a scan from the back-office', function () {
         ->instanceCommand(ScanMachineCommand::class, $machine->id)
         ->getForm()
         ->post(['objective' => 'check ssh hardening'])
-        ->assertReturnsInfo();
+        ->assertReturnsLink();
 
-    Queue::assertPushed(RunScan::class, fn ($job) => $job->machineId === $machine->id && $job->objective === 'check ssh hardening');
+    $run = AgentRun::firstWhere('machine_id', $machine->id);
+    expect($run->status)->toBe('queued')->and($run->objective)->toBe('check ssh hardening');
+
+    Queue::assertPushed(RunScan::class, fn ($job) => $job->machineId === $machine->id && $job->objective === 'check ssh hardening' && $job->runId === $run->id);
 });
 
 it('approves a pending action and runs it', function () {

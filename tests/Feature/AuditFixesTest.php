@@ -152,7 +152,7 @@ it('stores the author of a queued scan', function () {
 
     $this->sharpList(MachineEntity::class)
         ->instanceCommand(ScanMachineCommand::class, $machine->id)
-        ->getForm()->post(['objective' => 'x'])->assertReturnsInfo();
+        ->getForm()->post(['objective' => 'x'])->assertReturnsLink();
 
     Queue::assertPushed(RunScan::class, fn ($job) => $job->userId === auth()->id());
 });
