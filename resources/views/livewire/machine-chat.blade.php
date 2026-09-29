@@ -1,32 +1,59 @@
-<div style="display:flex;flex-direction:column;height:100%;padding:12px;gap:8px">
-    <div style="display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:12px">
-        <span>Agent on <strong>{{ $machine->name }}</strong> ({{ $machine->environment }}) — read-only tools; corrective actions are risk-checked.</span>
+<div class="chat" x-data
+     x-init="const el = $refs.messages; const down = () => el.scrollTo({ top: el.scrollHeight }); down(); new MutationObserver(down).observe(el, { childList: true, subtree: true, characterData: true })">
+    <div class="header">
+        <div class="header-title">
+            @svg('lucide-server')
+            <span class="name">{{ $machine->name }}</span>
+            <span class="badge {{ $machine->environment === 'production' ? 'prod' : '' }}">{{ $machine->environment }}</span>
+        </div>
         @if ($messages->isNotEmpty())
-            <button type="button" wire:click="clear" wire:confirm="Clear this conversation?" style="background:none;border:0;color:var(--accent);cursor:pointer">Clear</button>
+            <button type="button" class="btn btn-ghost" wire:click="clear" wire:confirm="Clear this conversation?">
+                @svg('lucide-trash-2') Clear
+            </button>
         @endif
     </div>
 
-    <div style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px" id="messages">
+    <div class="messages" x-ref="messages">
         @forelse ($messages as $chatMessage)
-            <div wire:key="m{{ $chatMessage->id }}" style="max-width:85%;padding:8px 12px;border-radius:10px;white-space:pre-wrap;word-break:break-word;background:var({{ $chatMessage->role === 'user' ? '--user' : '--bot' }});align-self:{{ $chatMessage->role === 'user' ? 'flex-end' : 'flex-start' }}">{{ $chatMessage->content }}</div>
+            <div wire:key="m{{ $chatMessage->id }}" class="row {{ $chatMessage->role === 'user' ? 'user' : 'assistant' }}">
+                <div class="avatar">@svg($chatMessage->role === 'user' ? 'lucide-user' : 'lucide-bot')</div>
+                <div class="bubble">{{ $chatMessage->content }}</div>
+            </div>
         @empty
-            <p style="color:var(--muted)">Ask something, e.g. “How is the disk usage?” or “Check the SSH hardening”.</p>
+            <div class="empty" wire:loading.remove wire:target="send">
+                <div class="avatar">@svg('lucide-shield-check')</div>
+                <h2>Sentinel agent</h2>
+                <p>Read-only tools by default. Corrective actions are risk-checked and need your approval.</p>
+                <div class="suggestions">
+                    @foreach (['How is the disk usage?', 'Check the SSH hardening', 'Any failed services?', 'Summarise recent failed logins'] as $suggestion)
+                        <button type="button" class="btn btn-outline" x-on:click="$wire.message = @js($suggestion); $wire.send()">{{ $suggestion }}</button>
+                    @endforeach
+                </div>
+            </div>
         @endforelse
 
-        <div wire:loading.flex wire:target="send" style="display:none;flex-direction:column;gap:8px">
-            <div wire:stream="question" style="max-width:85%;padding:8px 12px;border-radius:10px;white-space:pre-wrap;word-break:break-word;background:var(--user);align-self:flex-end"></div>
-            <div style="max-width:85%;padding:8px 12px;border-radius:10px;background:var(--bot);align-self:flex-start">
-                <div wire:stream="answer" style="white-space:pre-wrap;word-break:break-word"></div>
-                <div wire:stream="status" style="color:var(--muted);font-size:12px"></div>
+        <div wire:loading.flex wire:target="send" style="display:none;flex-direction:column;gap:1.25rem">
+            <div class="row user">
+                <div class="avatar">@svg('lucide-user')</div>
+                <div class="bubble" wire:stream="question"></div>
+            </div>
+            <div class="row assistant">
+                <div class="avatar">@svg('lucide-bot')</div>
+                <div class="bubble">
+                    <div wire:stream="answer" style="white-space:pre-wrap;word-break:break-word"></div>
+                    <div class="typing-wrap"><span class="typing"><i></i><i></i><i></i></span></div>
+                    <div class="status" wire:stream="status"></div>
+                </div>
             </div>
         </div>
     </div>
 
-    <form wire:submit="send" style="display:flex;gap:8px">
-        <input type="text" wire:model="message" wire:loading.attr="disabled" wire:target="send" placeholder="Message the agent" maxlength="2000" autocomplete="off"
-               style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--fg)">
-        <button type="submit" wire:loading.attr="disabled" wire:target="send"
-                style="padding:8px 16px;border:0;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer">Send</button>
-    </form>
-    @error('message') <span style="color:#dc2626">{{ $message }}</span> @enderror
+    <div class="composer">
+        <form wire:submit="send">
+            <input type="text" class="input" wire:model="message" wire:loading.attr="disabled" wire:target="send" placeholder="Message the agent…" maxlength="2000" autocomplete="off" autofocus>
+            <button type="submit" class="btn btn-primary btn-icon" wire:loading.attr="disabled" wire:target="send" aria-label="Send">@svg('lucide-send-horizontal')</button>
+        </form>
+        @error('message') <span class="error">{{ $message }}</span> @enderror
+        <div class="footnote">The agent can make mistakes. Every command is audited.</div>
+    </div>
 </div>
