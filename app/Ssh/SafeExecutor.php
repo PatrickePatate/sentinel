@@ -21,6 +21,7 @@ class SafeExecutor
     public function __construct(
         private ToolCatalog $catalog,
         private SshTransport $transport,
+        private AuditTrail $audit = new AuditTrail,
     ) {}
 
     /**
@@ -64,17 +65,12 @@ class SafeExecutor
     /** @param array<string, mixed> $arguments */
     private function audit(Machine $machine, ?AgentRun $run, string $tool, array $arguments, string $command, ?int $exitCode, string $excerpt, string $status): void
     {
-        activity('ssh')
-            ->performedOn($machine)
-            ->event($status)
-            ->withProperties([
-                'tool' => $tool,
-                'arguments' => $arguments,
-                'command' => $command,
-                'exit_code' => $exitCode,
-                'output_excerpt' => $excerpt,
-                'agent_run_id' => $run?->id,
-            ])
-            ->log($tool);
+        $this->audit->record($machine, $run, $status, $tool, [
+            'tool' => $tool,
+            'arguments' => $arguments,
+            'command' => $command,
+            'exit_code' => $exitCode,
+            'output_excerpt' => $excerpt,
+        ]);
     }
 }

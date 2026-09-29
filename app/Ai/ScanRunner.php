@@ -21,7 +21,7 @@ class ScanRunner
         ]);
 
         try {
-            $response = (new SysadminAgent($machine, $run))->prompt(
+            $response = (new SysadminAgent($machine, $run, $objective))->prompt(
                 "Machine: {$machine->name} ({$machine->environment}).\nObjective: {$objective}",
                 provider: $provider,
                 model: $model,
