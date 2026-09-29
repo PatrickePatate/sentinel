@@ -5,6 +5,7 @@ namespace App\Sharp\PendingActions;
 use App\Models\PendingAction;
 use Code16\Sharp\EntityList\Fields\EntityListField;
 use Code16\Sharp\EntityList\Fields\EntityListFieldsContainer;
+use Code16\Sharp\EntityList\Fields\EntityListStateField;
 use Code16\Sharp\EntityList\SharpEntityList;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Support\Carbon;
@@ -19,12 +20,14 @@ class PendingActionList extends SharpEntityList
             ->addField(EntityListField::make('command')->setLabel('Command')->setHtml(false))
             ->addField(EntityListField::make('risk')->setLabel('Risk')->setHtml(false))
             ->addField(EntityListField::make('reason')->setLabel('Why held')->setHtml(false))
-            ->addField(EntityListField::make('status')->setLabel('Status')->setHtml(false));
+            ->addField(EntityListStateField::make()->setLabel('Status'));
     }
 
     public function buildListConfig(): void
     {
-        $this->configureDefaultSort('created_at', 'desc');
+        $this
+            ->configureDefaultSort('created_at', 'desc')
+            ->configureEntityState('status', PendingActionStatusState::class);
     }
 
     public function getInstanceCommands(): ?array

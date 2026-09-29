@@ -19,8 +19,12 @@ class PendingActionShow extends SharpShow
             ->addField(SharpShowTextField::make('command')->setLabel('Exact command')->setHtml(false))
             ->addField(SharpShowTextField::make('risk')->setLabel('Risk')->setHtml(false))
             ->addField(SharpShowTextField::make('reason')->setLabel('Why it was held')->setHtml(false))
-            ->addField(SharpShowTextField::make('status')->setLabel('Status')->setHtml(false))
             ->addField(SharpShowTextField::make('output')->setLabel('Output')->setHtml(false));
+    }
+
+    public function buildShowConfig(): void
+    {
+        $this->configureEntityState('status', PendingActionStatusState::class);
     }
 
     protected function buildShowLayout(ShowLayout $showLayout): void
@@ -29,7 +33,7 @@ class PendingActionShow extends SharpShow
             ->addColumn(6, fn (ShowLayoutColumn $column) => $column
                 ->withField('machine:name')->withField('command')->withField('risk'))
             ->addColumn(6, fn (ShowLayoutColumn $column) => $column
-                ->withField('reason')->withField('status')->withField('output')));
+                ->withField('reason')->withField('output')));
     }
 
     public function getInstanceCommands(): ?array

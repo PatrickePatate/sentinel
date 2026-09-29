@@ -5,6 +5,7 @@ namespace App\Sharp\Scans;
 use App\Models\AgentRun;
 use Code16\Sharp\EntityList\Fields\EntityListField;
 use Code16\Sharp\EntityList\Fields\EntityListFieldsContainer;
+use Code16\Sharp\EntityList\Fields\EntityListStateField;
 use Code16\Sharp\EntityList\SharpEntityList;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Support\Carbon;
@@ -20,12 +21,14 @@ class AgentRunList extends SharpEntityList
             ->addField(EntityListField::make('provider')->setLabel('Provider')->setHtml(false))
             ->addField(EntityListField::make('severity')->setLabel('Severity')->setHtml(false))
             ->addField(EntityListField::make('trigger')->setLabel('Trigger')->setHtml(false))
-            ->addField(EntityListField::make('status')->setLabel('Status')->setHtml(false));
+            ->addField(EntityListStateField::make()->setLabel('Status'));
     }
 
     public function buildListConfig(): void
     {
-        $this->configureDefaultSort('created_at', 'desc');
+        $this
+            ->configureDefaultSort('created_at', 'desc')
+            ->configureEntityState('status', AgentRunStatusState::class);
     }
 
     public function getListData(): array|Arrayable
