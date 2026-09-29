@@ -8,20 +8,27 @@ use App\Sharp\Entities\AuditEntryEntity;
 use App\Sharp\Entities\MachineEntity;
 use App\Sharp\Entities\PendingActionEntity;
 use Code16\Sharp\Utils\Menu\SharpMenu as BaseSharpMenu;
+use Code16\Sharp\Utils\Menu\SharpMenuItemSection;
 
 class SharpMenu extends BaseSharpMenu
 {
     public function build(): self
     {
         return $this
-            ->addEntityLink(MachineEntity::class, 'Machines', 'fas fa-server')
-            ->addEntityLink(AgentRunEntity::class, 'Scans', 'fas fa-magnifying-glass')
-            ->addEntityLink(
-                PendingActionEntity::class,
-                'Pending actions',
-                'fas fa-hand',
-                badge: fn () => PendingAction::where('status', 'pending')->count() ?: null,
+            ->addSection('Infrastructure', fn (SharpMenuItemSection $section) => $section
+                ->addEntityLink(MachineEntity::class, 'Machines', 'lucide-server')
             )
-            ->addEntityLink(AuditEntryEntity::class, 'Audit log', 'fas fa-clipboard-list');
+            ->addSection('AI agent', fn (SharpMenuItemSection $section) => $section
+                ->addEntityLink(AgentRunEntity::class, 'Scans', 'lucide-scan-search')
+                ->addEntityLink(
+                    PendingActionEntity::class,
+                    'Pending actions',
+                    'lucide-hand',
+                    badge: fn () => PendingAction::where('status', 'pending')->count() ?: null,
+                )
+            )
+            ->addSection('Traceability', fn (SharpMenuItemSection $section) => $section
+                ->addEntityLink(AuditEntryEntity::class, 'Audit log', 'lucide-clipboard-list')
+            );
     }
 }

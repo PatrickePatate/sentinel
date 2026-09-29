@@ -11,6 +11,8 @@ class MachineEntity extends SharpEntity
 {
     protected string $label = 'Machine';
 
+    protected ?string $icon = 'lucide-server';
+
     protected ?string $list = MachineList::class;
 
     protected ?string $show = MachineShow::class;

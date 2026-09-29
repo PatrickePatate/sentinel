@@ -10,6 +10,8 @@ class PendingActionEntity extends SharpEntity
 {
     protected string $label = 'Pending action';
 
+    protected ?string $icon = 'lucide-hand';
+
     protected ?string $list = PendingActionList::class;
 
     protected ?string $show = PendingActionShow::class;

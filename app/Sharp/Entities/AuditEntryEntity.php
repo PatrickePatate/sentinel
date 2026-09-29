@@ -9,6 +9,8 @@ class AuditEntryEntity extends SharpEntity
 {
     protected string $label = 'Audit entry';
 
+    protected ?string $icon = 'lucide-clipboard-list';
+
     protected ?string $list = AuditEntryList::class;
 
     protected array $prohibitedActions = ['create', 'update', 'delete'];

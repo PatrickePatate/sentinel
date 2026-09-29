@@ -9,8 +9,10 @@ use App\Sharp\Entities\PendingActionEntity;
 use App\Sharp\Machines\ScanMachineCommand;
 use App\Sharp\PendingActions\ApprovePendingActionCommand;
 use App\Sharp\PendingActions\RejectPendingActionCommand;
+use App\Sharp\SharpMenu;
 use App\Ssh\CommandResult;
 use App\Ssh\SshTransport;
+use Code16\Sharp\Utils\Menu\SharpMenuItemSection;
 use Code16\Sharp\Utils\Testing\SharpAssertions;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
@@ -115,4 +117,16 @@ it('requires authentication for the back-office', function () {
     auth()->logout();
 
     $this->get('/sharp/s-list/machine')->assertRedirect();
+});
+
+it('groups the menu in sections with resolvable Lucide icons', function () {
+    $menu = (new SharpMenu)->build()->items();
+
+    expect($menu)->toHaveCount(3)->each(fn ($item) => $item->toBeInstanceOf(SharpMenuItemSection::class));
+
+    foreach (['server', 'scan-search', 'hand', 'clipboard-list'] as $icon) {
+        expect(svg("lucide-{$icon}")->toHtml())->toContain('<svg');
+    }
+
+    $this->sharpList(MachineEntity::class)->get()->assertOk()->assertSee('Infrastructure')->assertSee('Traceability');
 });

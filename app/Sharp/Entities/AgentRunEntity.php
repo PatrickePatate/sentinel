@@ -10,6 +10,8 @@ class AgentRunEntity extends SharpEntity
 {
     protected string $label = 'Scan';
 
+    protected ?string $icon = 'lucide-scan-search';
+
     protected ?string $list = AgentRunList::class;
 
     protected ?string $show = AgentRunShow::class;
