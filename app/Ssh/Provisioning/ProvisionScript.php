@@ -3,7 +3,6 @@
 namespace App\Ssh\Provisioning;
 
 use App\Models\Machine;
-use InvalidArgumentException;
 
 /**
  * Renders the bash script an administrator runs ONCE, as root, on a machine to let
@@ -22,21 +21,18 @@ class ProvisionScript
 
     public function __construct(private SudoersBuilder $sudoers) {}
 
-    public function render(Machine $machine, ?string $fromIp = null): string
+    public function render(Machine $machine): string
     {
         $user = $machine->username;
         SudoersBuilder::assertValidUser($user);
 
-        if ($fromIp !== null && ! filter_var($fromIp, FILTER_VALIDATE_IP)) {
-            throw new InvalidArgumentException('--from must be a single IP address.');
-        }
-
         $publicKey = $machine->publicKey();
-        $authorizedOptions = 'restrict'.($fromIp ? ',from="'.$fromIp.'"' : '');
+        $sourceIps = SourceIps::configured();
+        $authorizedOptions = 'restrict'.($sourceIps ? ',from="'.implode(',', $sourceIps).'"' : '');
 
         $wrappers = '';
         foreach (self::WRAPPERS as $wrapper) {
-            $wrappers .= $this->installFile('/usr/local/sbin/'.$wrapper, $this->wrapperBody($wrapper, $fromIp), '0755')."\n";
+            $wrappers .= $this->installFile('/usr/local/sbin/'.$wrapper, $this->wrapperBody($wrapper), '0755')."\n";
         }
 
         $sudoers = $this->sudoers->render($user);
@@ -99,7 +95,7 @@ done
 BASH;
     }
 
-    public function wrapperBody(string $wrapper, ?string $fromIp = null): string
+    public function wrapperBody(string $wrapper): string
     {
         $body = file_get_contents(resource_path("provisioning/{$wrapper}.sh"));
 
@@ -111,7 +107,7 @@ BASH;
             '__ALLOWLIST__' => collect(config('sentinel.actions.package_allowlist'))->filter()->map(fn ($p) => "'{$p}'")->implode(' '),
             '__DENYLIST__' => collect(config('sentinel.actions.package_denylist'))->map(fn ($p) => "'{$p}'")->implode(' '),
             '__LOG_CASES__' => $logCases,
-            '__IGNOREIP__' => $fromIp ?? '',
+            '__IGNOREIP__' => implode(' ', SourceIps::configured()),
         ]);
     }
 

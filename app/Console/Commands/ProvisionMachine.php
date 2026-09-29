@@ -9,7 +9,7 @@ use Illuminate\Console\Command;
 
 class ProvisionMachine extends Command
 {
-    protected $signature = 'sentinel:provision {machine : Machine id} {--from= : Only accept the SSH key from this IP (recommended)} {--sudoers : Print only the sudoers policy} {--output= : Write the script to this file (mode 0700) instead of printing it}';
+    protected $signature = 'sentinel:provision {machine : Machine id} {--sudoers : Print only the sudoers policy} {--output= : Write the script to this file (mode 0700) instead of printing it}';
 
     protected $description = 'Print the script to run as root on a machine to give Sentinel restricted, audited access';
 
@@ -19,7 +19,7 @@ class ProvisionMachine extends Command
 
         $content = $this->option('sudoers')
             ? $sudoers->render($machine->username)
-            : $script->render($machine, $this->option('from') ?: null);
+            : $script->render($machine);
 
         if ($path = $this->option('output')) {
             file_put_contents($path, $content);

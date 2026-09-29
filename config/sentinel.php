@@ -18,6 +18,10 @@ return [
     'provisioning' => [
         // Unprivileged account Sentinel creates on each machine (and connects as).
         'user' => env('SENTINEL_AGENT_USER', 'sentinel'),
+
+        // Public address(es) Sentinel connects from, IPv4 and/or IPv6 (comma separated, CIDR allowed). The deployed key only
+        // works from there, and fail2ban never bans them. Empty = the key is accepted from anywhere.
+        'source_ips' => array_filter(array_map('trim', explode(',', (string) env('SENTINEL_SOURCE_IPS', '')))),
     ],
 
     'scheduling' => [

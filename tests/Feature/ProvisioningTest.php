@@ -61,20 +61,31 @@ it('refuses unsafe user names', function (string $user) {
 })->with(['root', 'a b', 'x;reboot', '', 'Sentinel'])->throws(InvalidArgumentException::class);
 
 it('renders a script with valid bash syntax and a restricted key', function () {
+    config(['sentinel.provisioning.source_ips' => ['203.0.113.9', '2001:db8::/64']]);
     $machine = provisionedMachine();
-    $script = app(ProvisionScript::class)->render($machine, '203.0.113.9');
+    $script = app(ProvisionScript::class)->render($machine);
     $file = tempnam(sys_get_temp_dir(), 'prov');
     file_put_contents($file, $script);
 
     expect(Process::run(['bash', '-n', $file])->successful())->toBeTrue()
-        ->and($script)->toContain('set -euo pipefail', 'visudo -cf', "usermod -p '*' sentinel", 'restrict,from="203.0.113.9" ssh-ed25519', 'ignoreip = 127.0.0.1/8 ::1 203.0.113.9')
+        ->and($script)->toContain('set -euo pipefail', 'visudo -cf', "usermod -p '*' sentinel", 'restrict,from="203.0.113.9,2001:db8::/64" ssh-ed25519', 'ignoreip = 127.0.0.1/8 ::1 203.0.113.9 2001:db8::/64')
         ->and($script)->not->toContain('PRIVATE KEY');
     unlink($file);
 });
 
-it('rejects a --from that is not a single IP', function () {
-    app(ProvisionScript::class)->render(provisionedMachine(), '10.0.0.0/8; reboot');
-})->throws(InvalidArgumentException::class);
+it('rejects source IPs that are not addresses or CIDR ranges', function (string $entry) {
+    config(['sentinel.provisioning.source_ips' => ['203.0.113.9', $entry]]);
+
+    app(ProvisionScript::class)->render(provisionedMachine());
+})->with(['10.0.0.0/8; reboot', '10.0.0.0/33', '2001:db8::/129', '"; command="id', 'example.com', '*'])->throws(InvalidArgumentException::class, 'SENTINEL_SOURCE_IPS');
+
+it('accepts the key from anywhere when no source IP is configured', function () {
+    config(['sentinel.provisioning.source_ips' => []]);
+
+    $script = app(ProvisionScript::class)->render(provisionedMachine());
+
+    expect($script)->toContain("'restrict ssh-ed25519")->not->toContain('from=');
+});
 
 it('generates a sudoers file that visudo accepts', function () {
     if (Process::run('command -v visudo')->failed()) {
@@ -92,7 +103,7 @@ it('generates a sudoers file that visudo accepts', function () {
 it('ships wrappers that reject malicious arguments before doing anything', function (string $wrapper, array $args, int $expectedExit) {
     config(['sentinel.actions.package_allowlist' => ['zz-nonexistent-pkg', 'openssh-*', 'linux-*']]);
     $file = tempnam(sys_get_temp_dir(), 'wrapper');
-    file_put_contents($file, app(ProvisionScript::class)->wrapperBody($wrapper, '203.0.113.9'));
+    file_put_contents($file, app(ProvisionScript::class)->wrapperBody($wrapper));
     chmod($file, 0755);
 
     $result = Process::run(['bash', $file, ...$args]);
@@ -118,7 +129,7 @@ it('ships wrappers that reject malicious arguments before doing anything', funct
 
 it('renders every wrapper as valid bash', function (string $wrapper) {
     $file = tempnam(sys_get_temp_dir(), 'wrapper');
-    file_put_contents($file, app(ProvisionScript::class)->wrapperBody($wrapper, '203.0.113.9'));
+    file_put_contents($file, app(ProvisionScript::class)->wrapperBody($wrapper));
 
     expect(Process::run(['bash', '-n', $file])->successful())->toBeTrue();
     unlink($file);
@@ -184,15 +195,16 @@ it('renders a revoke script that closes the door before killing sessions and is 
 });
 
 it('writes the provisioning script of a Sentinel-generated key to a private file, valid bash, with the public half only', function () {
+    config(['sentinel.provisioning.source_ips' => ['203.0.113.7', '2001:db8::/64']]);
     $machine = Machine::factory()->create(['username' => 'sentinel', 'private_key' => Machine::generatePrivateKey()]);
     $path = tempnam(sys_get_temp_dir(), 'prov');
 
-    $this->artisan('sentinel:provision', ['machine' => $machine->id, '--output' => $path, '--from' => '203.0.113.7'])->assertSuccessful();
+    $this->artisan('sentinel:provision', ['machine' => $machine->id, '--output' => $path])->assertSuccessful();
 
     $script = file_get_contents($path);
     expect(Process::run(['bash', '-n', $path])->successful())->toBeTrue()
         ->and(substr(sprintf('%o', fileperms($path)), -4))->toBe('0700')
-        ->and($script)->toContain($machine->publicKey(), 'restrict,from="203.0.113.7"', 'AllowUsers')
+        ->and($script)->toContain($machine->publicKey(), 'restrict,from="203.0.113.7,2001:db8::/64"', 'AllowUsers')
         ->not->toContain('PRIVATE KEY');
 
     unlink($path);

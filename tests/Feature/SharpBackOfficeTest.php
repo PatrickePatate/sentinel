@@ -70,7 +70,7 @@ it('downloads the provisioning script from the machine page and audits it', func
 
     $this->sharpShow(MachineEntity::class, $machine->id)
         ->instanceCommand(DownloadProvisionScriptCommand::class)
-        ->getForm()->post(['from' => '203.0.113.7'])
+        ->post()
         ->assertReturnsDownload('sentinel-provision-'.Str::slug($machine->name).'.sh');
 
     expect(Activity::where('event', 'provision_script_downloaded')->count())->toBe(1);
