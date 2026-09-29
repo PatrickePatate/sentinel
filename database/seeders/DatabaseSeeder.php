@@ -17,6 +17,10 @@ class DatabaseSeeder extends Seeder
     {
         // User::factory(10)->create();
 
+        if (config('sentinel.transport') === 'fake') {
+            $this->call(FakeMachinesSeeder::class);
+        }
+
         User::factory()->create([
             'name' => 'Test User',
             'email' => 'test@example.com',

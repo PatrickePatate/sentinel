@@ -1,6 +1,7 @@
 <?php
 
 use App\Ai\Agents\SysadminAgent;
+use App\Ai\ScanRunner;
 use App\Livewire\MachineChat;
 use App\Models\AgentRun;
 use App\Models\ChatMessage;
@@ -11,6 +12,7 @@ use Code16\Sharp\Utils\Testing\SharpAssertions;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
+use Laravel\Ai\Streaming\Events\TextDelta;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -82,4 +84,19 @@ it('validates and escapes messages', function () {
     Livewire::test(MachineChat::class, ['machine' => $machine])
         ->assertDontSeeHtml('<script>alert(1)</script>')
         ->set('message', '')->call('send')->assertHasErrors('message');
+});
+
+it('emits streaming events to the callback and stores the final answer', function () {
+    SysadminAgent::fake(['Streamed answer.']);
+    $deltas = '';
+
+    $run = app(ScanRunner::class)->reply(Machine::factory()->create(), 'hello', [], function ($event) use (&$deltas) {
+        if ($event instanceof TextDelta) {
+            $deltas .= $event->delta;
+        }
+    });
+
+    expect($deltas)->toBe('Streamed answer.')
+        ->and($run->status)->toBe('completed')
+        ->and($run->report)->toBe('Streamed answer.');
 });

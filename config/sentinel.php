@@ -1,6 +1,13 @@
 <?php
 
 return [
+    // 'ssh' talks to real machines; 'fake' simulates them (local development).
+    'transport' => env('SENTINEL_TRANSPORT', 'ssh'),
+
+    'fake' => [
+        'latency_ms' => (int) env('SENTINEL_FAKE_LATENCY_MS', 400),
+    ],
+
     'agent' => [
         'provider' => env('SENTINEL_AI_PROVIDER', 'anthropic'),
         'model' => env('SENTINEL_AI_MODEL'),

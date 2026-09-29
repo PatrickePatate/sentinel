@@ -6,6 +6,9 @@ use App\Ai\ScanRunner;
 use App\Models\ChatMessage;
 use App\Models\Machine;
 use Illuminate\Support\Collection;
+use Laravel\Ai\Streaming\Events\StreamEvent;
+use Laravel\Ai\Streaming\Events\TextDelta;
+use Laravel\Ai\Streaming\Events\ToolCall;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
@@ -35,7 +38,16 @@ class MachineChat extends Component
 
         $this->store('user', $text);
 
-        $run = $runner->reply($machine, $text, $history);
+        $this->stream(to: 'question', content: $text, replace: true);
+        $this->stream(to: 'status', content: 'The agent is thinking…', replace: true);
+
+        $run = $runner->reply($machine, $text, $history, function (StreamEvent $event) {
+            if ($event instanceof TextDelta) {
+                $this->stream(to: 'answer', content: $event->delta);
+            } elseif ($event instanceof ToolCall) {
+                $this->stream(to: 'status', content: "Running {$event->toolCall->name}…", replace: true);
+            }
+        });
 
         $this->store('assistant', $run->status === 'completed' ? $run->report : 'The agent could not answer: '.$run->report);
     }

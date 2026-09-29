@@ -5,6 +5,8 @@ namespace App\Ai;
 use App\Ai\Agents\SysadminAgent;
 use App\Models\AgentRun;
 use App\Models\Machine;
+use Closure;
+use Laravel\Ai\Streaming\Events\StreamEvent;
 use Throwable;
 
 class ScanRunner
@@ -19,14 +21,15 @@ class ScanRunner
      * per-run autonomous-action quota keep applying.
      *
      * @param  list<array{role: string, content: string}>  $history
+     * @param  (Closure(StreamEvent): void)|null  $onStream  Receives streaming events (text deltas, tool calls...).
      */
-    public function reply(Machine $machine, string $message, array $history): AgentRun
+    public function reply(Machine $machine, string $message, array $history, ?Closure $onStream = null): AgentRun
     {
-        return $this->execute($machine, $message, $message, $history);
+        return $this->execute($machine, $message, $message, $history, onStream: $onStream);
     }
 
     /** @param list<array{role: string, content: string}> $history */
-    private function execute(Machine $machine, string $objective, string $prompt, array $history, ?string $provider = null, ?string $model = null): AgentRun
+    private function execute(Machine $machine, string $objective, string $prompt, array $history, ?string $provider = null, ?string $model = null, ?Closure $onStream = null): AgentRun
     {
         $provider ??= config('sentinel.agent.provider');
         $model ??= config('sentinel.agent.model');
@@ -38,9 +41,19 @@ class ScanRunner
         ]);
 
         try {
-            $response = (new SysadminAgent($machine, $run, $objective, $history))->prompt($prompt, provider: $provider, model: $model);
+            $agent = new SysadminAgent($machine, $run, $objective, $history);
 
-            $run->update(['status' => 'completed', 'report' => $response->text]);
+            if ($onStream) {
+                $stream = $agent->stream($prompt, provider: $provider, model: $model);
+                foreach ($stream as $event) {
+                    $onStream($event);
+                }
+                $text = $stream->text;
+            } else {
+                $text = $agent->prompt($prompt, provider: $provider, model: $model)->text;
+            }
+
+            $run->update(['status' => 'completed', 'report' => $text]);
         } catch (Throwable $e) {
             $run->update(['status' => 'failed', 'report' => $e->getMessage()]);
         }

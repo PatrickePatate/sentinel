@@ -9,6 +9,10 @@ class HostKeyFingerprint
 {
     public static function fetch(Machine $machine): ?string
     {
+        if (config('sentinel.transport') === 'fake') {
+            return Fake\FakeTransport::fingerprintFor($machine);
+        }
+
         $key = (new SSH2($machine->host, $machine->port, 10))->getServerPublicHostKey();
 
         return $key ? self::of($key) : null;
