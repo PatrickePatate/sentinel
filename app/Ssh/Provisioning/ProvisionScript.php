@@ -17,6 +17,8 @@ class ProvisionScript
         'sentinel-fail2ban-filter',
         'sentinel-fail2ban-jail',
         'sentinel-fail2ban-remove',
+        'sentinel-sshd-harden',
+        'sentinel-install-package',
     ];
 
     public function __construct(private SudoersBuilder $sudoers) {}
@@ -106,6 +108,7 @@ BASH;
         return strtr($body, [
             '__ALLOWLIST__' => collect(config('sentinel.actions.package_allowlist'))->filter()->map(fn ($p) => "'{$p}'")->implode(' '),
             '__DENYLIST__' => collect(config('sentinel.actions.package_denylist'))->map(fn ($p) => "'{$p}'")->implode(' '),
+            '__INSTALLABLE__' => collect(config('sentinel.actions.installable_packages'))->map(fn ($p) => "'{$p}'")->implode(' '),
             '__LOG_CASES__' => $logCases,
             '__IGNOREIP__' => implode(' ', SourceIps::configured()),
         ]);

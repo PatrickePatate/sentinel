@@ -125,6 +125,14 @@ it('ships wrappers that reject malicious arguments before doing anything', funct
     'jail: bad name' => ['sentinel-fail2ban-jail', ['a b', 'f', 'sshd', '5', '600', '3600'], 2],
     'jail: filter missing' => ['sentinel-fail2ban-jail', ['ok', 'nofilter', 'sshd', '5', '600', '3600'], 4],
     'remove: traversal' => ['sentinel-fail2ban-remove', ['../../etc/shadow'], 2],
+    'sshd: bad root value' => ['sentinel-sshd-harden', ['yes', 'no'], 2],
+    'sshd: bad password value' => ['sentinel-sshd-harden', ['no', 'yes'], 2],
+    'sshd: injection' => ['sentinel-sshd-harden', ['no; id', 'no'], 2],
+    'sshd: nothing to change' => ['sentinel-sshd-harden', ['keep', 'keep'], 2],
+    'sshd: too few' => ['sentinel-sshd-harden', ['no'], 2],
+    'install: not installable' => ['sentinel-install-package', ['nmap'], 3],
+    'install: injection' => ['sentinel-install-package', ['fail2ban; reboot'], 3],
+    'install: two args' => ['sentinel-install-package', ['fail2ban', 'ufw'], 2],
 ]);
 
 it('renders every wrapper as valid bash', function (string $wrapper) {
@@ -133,7 +141,7 @@ it('renders every wrapper as valid bash', function (string $wrapper) {
 
     expect(Process::run(['bash', '-n', $file])->successful())->toBeTrue();
     unlink($file);
-})->with(['sentinel-upgrade-package', 'sentinel-fail2ban-unban', 'sentinel-fail2ban-filter', 'sentinel-fail2ban-jail', 'sentinel-fail2ban-remove']);
+})->with(['sentinel-upgrade-package', 'sentinel-fail2ban-unban', 'sentinel-fail2ban-filter', 'sentinel-fail2ban-jail', 'sentinel-fail2ban-remove', 'sentinel-sshd-harden', 'sentinel-install-package']);
 
 it('validates fail2ban filter payloads in the wrapper before writing anything', function (string $payload, int $expectedExit) {
     $file = tempnam(sys_get_temp_dir(), 'wrapper');

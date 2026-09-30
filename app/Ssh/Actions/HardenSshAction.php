@@ -1,0 +1,59 @@
+<?php
+
+namespace App\Ssh\Actions;
+
+use App\Ssh\Provisioning\RequiresSudo;
+use App\Ssh\Tools\InvalidToolArguments;
+use Illuminate\Contracts\JsonSchema\JsonSchema;
+
+class HardenSshAction implements ActionTool, RequiresSudo
+{
+    use UsesSudo;
+
+    public const WRAPPER = '/usr/local/sbin/sentinel-sshd-harden';
+
+    public function name(): string
+    {
+        return 'harden_ssh';
+    }
+
+    public function description(): string
+    {
+        return 'Disable SSH root login and/or password authentication through a Sentinel drop-in file, then reload sshd (open sessions stay up). '
+            .'Refuses when no administrator other than Sentinel has an SSH key, and reverts if sshd rejects the change or another setting overrides it. Always needs human approval.';
+    }
+
+    public function risk(): RiskLevel
+    {
+        return RiskLevel::Medium;
+    }
+
+    public function schema(JsonSchema $schema): array
+    {
+        return [
+            'permit_root_login' => $schema->string()->enum(['no', 'prohibit-password', 'keep'])->description('no: root cannot log in; prohibit-password: root only with a key; keep: unchanged')->required(),
+            'password_authentication' => $schema->string()->enum(['no', 'keep'])->description('no: disable password and keyboard-interactive logins; keep: unchanged')->required(),
+        ];
+    }
+
+    public function command(array $arguments): string
+    {
+        $rootLogin = $arguments['permit_root_login'] ?? null;
+        $passwordAuth = $arguments['password_authentication'] ?? null;
+
+        if (! in_array($rootLogin, ['no', 'prohibit-password', 'keep'], true) || ! in_array($passwordAuth, ['no', 'keep'], true)) {
+            throw new InvalidToolArguments('Invalid SSH hardening values.');
+        }
+
+        if ($rootLogin === 'keep' && $passwordAuth === 'keep') {
+            throw new InvalidToolArguments('Nothing to change.');
+        }
+
+        return $this->sudo().self::WRAPPER.' '.escapeshellarg($rootLogin).' '.escapeshellarg($passwordAuth).' 2>&1';
+    }
+
+    public function sudoRules(): array
+    {
+        return [self::WRAPPER.' *'];
+    }
+}

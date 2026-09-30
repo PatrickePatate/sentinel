@@ -12,6 +12,7 @@ use App\Ssh\Gate\RiskGate;
 use App\Ssh\SafeExecutor;
 use App\Ssh\SshTransport;
 use App\Ssh\ToolCatalog;
+use App\Ssh\Tools\InvalidToolArguments;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Ai\Classification;
 use Laravel\Ai\Responses\Data\BooleanAnswer;
@@ -272,4 +273,19 @@ it('hides low-level failure details from the model but keeps them in the audit t
 
     expect($out)->not->toContain('10.9.8.7')
         ->and(Activity::where('event', 'failed')->first()->properties['output_excerpt'])->toContain('10.9.8.7');
+});
+
+it('builds the SSH hardening and security package commands from validated values only', function () {
+    $catalog = ActionCatalog::default();
+
+    expect($catalog->get('harden_ssh')->command(['permit_root_login' => 'prohibit-password', 'password_authentication' => 'no']))
+        ->toBe("/usr/local/sbin/sentinel-sshd-harden 'prohibit-password' 'no' 2>&1")
+        ->and($catalog->get('install_security_package')->command(['package' => 'fail2ban']))
+        ->toBe("/usr/local/sbin/sentinel-install-package 'fail2ban' 2>&1")
+        ->and($catalog->get('harden_ssh')->risk()->value)->toBe('medium')
+        ->and($catalog->get('install_security_package')->risk()->value)->toBe('medium');
+
+    expect(fn () => $catalog->get('harden_ssh')->command(['permit_root_login' => 'yes', 'password_authentication' => 'no']))->toThrow(InvalidToolArguments::class)
+        ->and(fn () => $catalog->get('harden_ssh')->command(['permit_root_login' => 'keep', 'password_authentication' => 'keep']))->toThrow(InvalidToolArguments::class)
+        ->and(fn () => $catalog->get('install_security_package')->command(['package' => 'nmap']))->toThrow(InvalidToolArguments::class);
 });

@@ -81,6 +81,9 @@ return [
             'libpam*', 'fail2ban', 'ufw', 'iptables', 'nftables', 'certbot*', 'cron', 'unattended-upgrades',
         ],
 
+        // Security tools the agent may install when missing (exact package names, installed by a root-owned wrapper).
+        'installable_packages' => ['fail2ban', 'unattended-upgrades'],
+
         'reloadable_services' => array_filter(explode(',', (string) env('SENTINEL_RELOADABLE_SERVICES', ''))),
         'restartable_services' => array_filter(explode(',', (string) env('SENTINEL_RESTARTABLE_SERVICES', ''))),
     ],

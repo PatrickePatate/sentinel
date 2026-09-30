@@ -8,6 +8,8 @@ use App\Ssh\Actions\Fail2banRemoveCustomAction;
 use App\Ssh\Actions\Fail2banUnbanAction;
 use App\Ssh\Actions\Fail2banWriteFilterAction;
 use App\Ssh\Actions\FixedCommandAction;
+use App\Ssh\Actions\HardenSshAction;
+use App\Ssh\Actions\InstallSecurityPackageAction;
 use App\Ssh\Actions\ReloadServiceAction;
 use App\Ssh\Actions\ResetFailedUnitAction;
 use App\Ssh\Actions\RestartServiceAction;
@@ -36,6 +38,7 @@ class ActionCatalog
         return new self([
             new FixedCommandAction('vacuum_journal', 'Delete systemd journal entries older than 14 days.', '{sudo}journalctl --vacuum-time=14d 2>&1', RiskLevel::Low, ['/usr/bin/journalctl --vacuum-time=14d']),
             new FixedCommandAction('clean_apt_cache', 'Clear the apt package download cache.', '{sudo}apt-get clean 2>&1', RiskLevel::Low, ['/usr/bin/apt-get clean']),
+            new FixedCommandAction('refresh_package_lists', 'Run apt-get update: refresh the package lists (needed before checking or installing security updates).', '{sudo}apt-get update 2>&1', RiskLevel::Low, ['/usr/bin/apt-get update']),
             new FixedCommandAction('renew_certificates', 'Run certbot renew: renews Let\'s Encrypt certificates that are close to expiry (existing deploy hooks apply). Needs human approval.', '{sudo}certbot renew 2>&1', RiskLevel::Medium, ['/usr/bin/certbot renew']),
             new ResetFailedUnitAction,
             new ReloadServiceAction,
@@ -45,6 +48,8 @@ class ActionCatalog
             new Fail2banCreateJailAction,
             new Fail2banRemoveCustomAction,
             new UpdatePackageAction,
+            new InstallSecurityPackageAction,
+            new HardenSshAction,
         ]);
     }
 
