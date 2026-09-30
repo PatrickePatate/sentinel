@@ -26,7 +26,14 @@ for member in $(getent group sudo | cut -d: -f4 | tr ',' ' ') $(getent group whe
 done
 if [[ $root_login != no ]] && has_keys root; then admin_with_key=1; fi
 if [[ $password_auth == no || $root_login != keep ]]; then
-    (( admin_with_key )) || { echo "no administrator (root or sudo group, other than $agent) has an SSH key: refusing, it could lock you out" >&2; exit 4; }
+    if (( ! admin_with_key )); then
+        if [[ $root_login == no ]] && has_keys root; then
+            echo "root has an SSH key, but PermitRootLogin no would block it too, and no sudo-group user other than $agent has a key: refusing, it would lock you out. Use prohibit-password to keep root key logins." >&2
+        else
+            echo "no administrator other than $agent (root, or a sudo/wheel member) has an SSH key: refusing, it could lock you out" >&2
+        fi
+        exit 4
+    fi
 fi
 
 backup=

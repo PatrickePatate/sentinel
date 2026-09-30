@@ -20,6 +20,7 @@ class HardenSshAction implements ActionTool, RequiresSudo
     public function description(): string
     {
         return 'Disable SSH root login and/or password authentication through a Sentinel drop-in file, then reload sshd (open sessions stay up). '
+            .'If root logs in with a key and no other admin has one, use permit_root_login=prohibit-password (\"no\" would lock root out and is refused). '
             .'Refuses when no administrator other than Sentinel has an SSH key, and reverts if sshd rejects the change or another setting overrides it. Always needs human approval.';
     }
 
