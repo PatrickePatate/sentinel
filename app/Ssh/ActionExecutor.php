@@ -6,6 +6,7 @@ use App\Models\AgentRun;
 use App\Models\Machine;
 use App\Models\PendingAction;
 use App\Notifications\Notifier;
+use App\Ssh\Actions\RiskLevel;
 use App\Ssh\Gate\GateVerdict;
 use App\Ssh\Gate\RiskGate;
 use App\Ssh\Tools\InvalidToolArguments;
@@ -73,6 +74,55 @@ class ActionExecutor
         }
 
         return $this->run($machine, $run, $actionName, $command, $context, 'action_executed');
+    }
+
+    /**
+     * Files a corrective action for human approval without ever running it, e.g. a fix the agent recommends
+     * in its report. Same validation as request(); high-risk actions are still refused outright, and the model
+     * cannot use a proposal to skip the gate: approving it goes through approve() like any held action.
+     *
+     * @param  array<string, mixed>  $arguments
+     * @return string Message for the agent.
+     */
+    public function propose(Machine $machine, string $actionName, array $arguments, ?AgentRun $run, string $rationale): string
+    {
+        try {
+            $action = $this->catalog->get($actionName);
+            $command = $action->command($arguments);
+        } catch (InvalidArgumentException|InvalidToolArguments $e) {
+            $this->audit->record($machine, $run, 'rejected', $actionName, ['arguments' => $arguments, 'reason' => $e->getMessage()]);
+
+            return 'ERROR: '.$e->getMessage();
+        }
+
+        $context = ['action' => $actionName, 'arguments' => $arguments, 'command' => $command, 'risk' => $action->risk()->value];
+
+        if ($action->risk() === RiskLevel::High) {
+            $this->audit->record($machine, $run, 'action_refused', $actionName, $context + ['reason' => 'High-risk actions cannot be proposed.']);
+
+            return 'REFUSED: high-risk actions cannot be proposed. Describe the fix in your report for a human to apply by hand.';
+        }
+
+        // The same fix proposed twice (or by two scans) is one decision for the human.
+        $existing = PendingAction::where('machine_id', $machine->id)->where('status', 'pending')->where('command', $command)->first();
+
+        if ($existing) {
+            return "ALREADY_PENDING (#{$existing->id}): this exact action is already waiting for approval.";
+        }
+
+        $pending = PendingAction::create([
+            'machine_id' => $machine->id,
+            'agent_run_id' => $run?->id,
+            'action' => $actionName,
+            'arguments' => $arguments,
+            'command' => $command,
+            'risk' => $action->risk()->value,
+            'reason' => 'Proposed by the agent: '.(mb_substr(trim($rationale), 0, 500) ?: 'no rationale given'),
+        ]);
+        $this->audit->record($machine, $run, 'action_proposed', $actionName, $context + ['pending_action_id' => $pending->id]);
+        app(Notifier::class)->approvalNeeded($pending);
+
+        return "PROPOSED (#{$pending->id}): filed for human approval, not executed. List it under proposed fixes in your report.";
     }
 
     /**
