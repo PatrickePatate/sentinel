@@ -2,10 +2,12 @@
 
 namespace App\Sharp\PendingActions;
 
+use App\Models\AgentRun;
 use App\Models\PendingAction;
 use Code16\Sharp\EntityList\Fields\EntityListField;
 use Code16\Sharp\EntityList\Fields\EntityListFieldsContainer;
 use Code16\Sharp\EntityList\Fields\EntityListStateField;
+use Code16\Sharp\EntityList\Filters\HiddenFilter;
 use Code16\Sharp\EntityList\SharpEntityList;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Support\Carbon;
@@ -30,6 +32,12 @@ class PendingActionList extends SharpEntityList
             ->configureEntityState('status', PendingActionStatusState::class);
     }
 
+    protected function getFilters(): ?array
+    {
+        // Set by the scan show page: the actions requested or proposed by that scan and its follow-ups.
+        return [HiddenFilter::make('agent_run')];
+    }
+
     public function getInstanceCommands(): ?array
     {
         return [ApprovePendingActionCommand::class, RejectPendingActionCommand::class];
@@ -41,6 +49,9 @@ class PendingActionList extends SharpEntityList
             ->setCustomTransformer('created_at', fn ($value) => $value ? Carbon::parse($value)->format('Y-m-d H:i') : null)
             ->transform(
                 PendingAction::with('machine')
+                    ->when($this->queryParams->filterFor('agent_run'), fn ($query, $runId) => $query->whereIn(
+                        'agent_run_id', AgentRun::whereKey($runId)->orWhere('parent_run_id', $runId)->select('id')
+                    ))
                     ->orderByRaw("status = 'pending' desc")
                     ->latest()
                     ->paginate(30)

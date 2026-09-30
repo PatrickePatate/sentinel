@@ -13,6 +13,7 @@ It is built with Laravel 13, the Laravel AI SDK, Livewire 4 and [Sharp](https://
 - **Scheduled audits.** Each machine is scanned on its own schedule. The agent checks services, logs, fail2ban, pending updates and more, then submits a verdict (severity + report).
 - **Live reports.** Follow a scan as it happens, step by step.
 - **Chat with a machine.** Ask the agent questions about a server in plain language.
+- **Act on a scan.** Reply to a finished scan (or press "Fix what you found") and the agent follows up on its own report. Fixes it recommends are filed as approvable actions, listed on the scan page.
 - **Corrective actions with a risk gate.**
   - **Low risk**: may run on its own if autonomy is enabled for the machine *and* a second classifier model agrees.
   - **Medium risk**: always waits for human approval.

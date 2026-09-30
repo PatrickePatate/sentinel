@@ -4,11 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class AgentRun extends Model
 {
     /** @var list<string> */
-    protected $fillable = ['machine_id', 'provider', 'objective', 'status', 'messages', 'report', 'trigger', 'severity', 'summary', 'progress'];
+    protected $fillable = ['machine_id', 'parent_run_id', 'provider', 'objective', 'status', 'messages', 'report', 'trigger', 'severity', 'summary', 'progress'];
 
     protected function casts(): array
     {
@@ -23,5 +24,22 @@ class AgentRun extends Model
     public function machine(): BelongsTo
     {
         return $this->belongsTo(Machine::class);
+    }
+
+    /** The scan this follow-up continues. */
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_run_id');
+    }
+
+    /** Follow-up turns asked from this scan's report, oldest first. */
+    public function followUps(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_run_id')->orderBy('id');
+    }
+
+    public function pendingActions(): HasMany
+    {
+        return $this->hasMany(PendingAction::class);
     }
 }

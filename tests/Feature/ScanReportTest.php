@@ -3,12 +3,16 @@
 use App\Ai\Agents\SysadminAgent;
 use App\Ai\LiveReport;
 use App\Ai\ScanRunner;
+use App\Jobs\RunFollowUp;
 use App\Jobs\RunScan;
+use App\Livewire\ScanReport;
 use App\Models\AgentRun;
 use App\Models\Machine;
+use App\Models\PendingAction;
 use App\Models\User;
 use App\Sharp\Entities\AgentRunEntity;
 use App\Sharp\Entities\MachineEntity;
+use App\Sharp\Entities\PendingActionEntity;
 use App\Sharp\Machines\ScanMachineCommand;
 use Code16\Sharp\Utils\Links\LinkToShowPage;
 use Code16\Sharp\Utils\Testing\SharpAssertions;
@@ -108,4 +112,60 @@ it('persists the streamed text and the current tool while a scan is running', fu
     $live->handle($delta('Checking '));
     $live->handle($delta('the disk'));
     expect($run->fresh()->report)->toBe('Checking the disk');
+});
+
+it('queues a follow-up on a finished scan and shows it in the thread', function () {
+    Queue::fake();
+    $this->actingAs(User::factory()->admin()->create());
+    $scan = runWith(['report' => 'nginx is down']);
+
+    Livewire\Livewire::test(ScanReport::class, ['run' => $scan])
+        ->call('fixFindings')
+        ->assertHasNoErrors()
+        ->assertSee('Apply the remediation you recommended')
+        ->assertSeeHtml('wire:poll.750ms')
+        ->call('ask')
+        ->assertHasErrors('message');
+
+    $followUp = AgentRun::where('parent_run_id', $scan->id)->sole();
+    expect($followUp->trigger)->toBe('follow_up')->and($followUp->status)->toBe('queued');
+    Queue::assertPushed(RunFollowUp::class, fn ($job) => $job->runId === $followUp->id);
+});
+
+it('refuses a follow-up while the scan is still running', function () {
+    Queue::fake();
+    $this->actingAs(User::factory()->admin()->create());
+
+    Livewire\Livewire::test(ScanReport::class, ['run' => runWith(['status' => 'running'])])
+        ->set('message', 'fix it')->call('ask')->assertHasErrors('message');
+
+    Queue::assertNothingPushed();
+});
+
+it('runs a follow-up with the scan report as conversation', function () {
+    SysadminAgent::fake(['Restart requested.']);
+    $scan = runWith(['report' => 'nginx is down']);
+    $followUp = app(ScanRunner::class)->queueFollowUp($scan, 'fix it');
+
+    (new RunFollowUp($followUp->id))->handle(app(ScanRunner::class));
+
+    expect($followUp->fresh()->status)->toBe('completed')->and($followUp->fresh()->report)->toBe('Restart requested.');
+    SysadminAgent::assertPrompted(fn ($prompt) => $prompt->prompt === 'fix it'
+        && collect($prompt->agent->messages())->contains(fn ($m) => $m->content === 'nginx is down'));
+});
+
+it('lists the actions of a scan and its follow-ups on the scan page', function () {
+    $this->actingAs(User::factory()->admin()->create());
+    $scan = runWith();
+    $followUp = app(ScanRunner::class)->queueFollowUp($scan, 'fix it');
+    $action = fn (?AgentRun $run, string $command) => PendingAction::create(['machine_id' => $scan->machine_id, 'agent_run_id' => $run?->id, 'action' => 'clean_apt_cache', 'command' => $command, 'risk' => 'low', 'reason' => 'r']);
+    $action($scan, 'from-scan');
+    $action($followUp, 'from-follow-up');
+    $action(runWith(), 'other-scan');
+
+    $this->sharpList(PendingActionEntity::class)
+        ->withFilter('agent_run', $scan->id)->get()->assertOk()
+        ->assertInertia(fn ($page) => $page->where('entityList.data', fn ($rows) => collect($rows)->pluck('command')->sort()->values()->all() === ['from-follow-up', 'from-scan'])->etc());
+
+    $this->sharpShow(AgentRunEntity::class, $scan->id)->get()->assertOk();
 });

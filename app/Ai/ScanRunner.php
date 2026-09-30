@@ -25,7 +25,47 @@ class ScanRunner
 
     public function run(Machine $machine, string $objective, ?string $provider = null, ?string $model = null, string $trigger = 'manual', ?AgentRun $run = null): AgentRun
     {
-        return $this->execute($machine, $objective, "Machine: {$machine->name} ({$machine->environment}).\nObjective: {$objective}", [], $provider, $model, trigger: $trigger, scan: true, run: $run);
+        return $this->execute($machine, $objective, $this->scanPrompt($machine, $objective), [], $provider, $model, trigger: $trigger, scan: true, run: $run);
+    }
+
+    /** Queues a follow-up turn on a finished scan ("fix what you found"), threaded under it. */
+    public function queueFollowUp(AgentRun $scan, string $message): AgentRun
+    {
+        return AgentRun::create([
+            'machine_id' => $scan->machine_id,
+            'parent_run_id' => $scan->id,
+            'provider' => config('sentinel.agent.provider'),
+            'objective' => $message,
+            'trigger' => 'follow_up',
+            'status' => 'queued',
+        ]);
+    }
+
+    /**
+     * Runs a queued follow-up with the scan and the earlier follow-ups as conversation, so the agent can act on
+     * what it reported. Its actions still go through the gate, and are linked to this follow-up run.
+     */
+    public function followUp(AgentRun $run): AgentRun
+    {
+        $scan = $run->parent;
+        $history = [['role' => 'user', 'content' => $this->scanPrompt($scan->machine, $scan->objective)]];
+
+        foreach ([$scan, ...$scan->followUps()->where('id', '<', $run->id)->where('status', 'completed')->get()] as $turn) {
+            if ($turn->isNot($scan)) {
+                $history[] = ['role' => 'user', 'content' => $turn->objective];
+            }
+
+            $history[] = ['role' => 'assistant', 'content' => filled($turn->report) ? $turn->report : '(no report)'];
+        }
+
+        $history = array_slice($history, -config('sentinel.limits.chat_history_messages'));
+
+        return $this->execute($run->machine, $run->objective, $run->objective, $history, trigger: 'follow_up', live: true, run: $run);
+    }
+
+    private function scanPrompt(Machine $machine, string $objective): string
+    {
+        return "Machine: {$machine->name} ({$machine->environment}).\nObjective: {$objective}";
     }
 
     /**
@@ -41,7 +81,7 @@ class ScanRunner
     }
 
     /** @param list<array{role: string, content: string}> $history */
-    private function execute(Machine $machine, string $objective, string $prompt, array $history, ?string $provider = null, ?string $model = null, ?Closure $onStream = null, string $trigger = 'chat', bool $scan = false, ?AgentRun $run = null): AgentRun
+    private function execute(Machine $machine, string $objective, string $prompt, array $history, ?string $provider = null, ?string $model = null, ?Closure $onStream = null, string $trigger = 'chat', bool $scan = false, ?AgentRun $run = null, bool $live = false): AgentRun
     {
         if ($trigger === 'scheduled') {
             // A scheduled-only model is only used together with its own provider: a model name means nothing on another one.
@@ -68,13 +108,13 @@ class ScanRunner
         try {
             $agent = new SysadminAgent($machine, $run, $objective, $history, requiresVerdict: $scan);
 
-            if ($onStream || $scan) {
+            if ($onStream || $scan || $live) {
                 $stream = $agent->stream($prompt, provider: $provider, model: $model);
-                $live = new LiveReport($run);
+                $report = new LiveReport($run);
 
                 foreach ($stream as $event) {
-                    if ($scan) {
-                        $live->handle($event);
+                    if ($scan || $live) {
+                        $report->handle($event);
                     }
 
                     if ($onStream) {

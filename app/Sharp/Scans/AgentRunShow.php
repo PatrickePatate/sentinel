@@ -3,6 +3,8 @@
 namespace App\Sharp\Scans;
 
 use App\Models\AgentRun;
+use App\Sharp\Entities\PendingActionEntity;
+use Code16\Sharp\Show\Fields\SharpShowEntityListField;
 use Code16\Sharp\Show\Fields\SharpShowTextField;
 use Code16\Sharp\Show\Layout\ShowLayout;
 use Code16\Sharp\Show\Layout\ShowLayoutColumn;
@@ -19,7 +21,12 @@ class AgentRunShow extends SharpShow
             ->addField(SharpShowTextField::make('objective')->setLabel('Objective')->setHtml(false))
             ->addField(SharpShowTextField::make('severity')->setLabel('Verdict')->setHtml(false))
             ->addField(SharpShowTextField::make('summary')->setLabel('Summary')->setHtml(false))
-            ->addField(SharpShowTextField::make('report')->setLabel(''));
+            ->addField(SharpShowTextField::make('report')->setLabel(''))
+            ->addField(SharpShowEntityListField::make(PendingActionEntity::class)
+                ->setLabel('Actions from this scan')
+                ->hideFilterWithValue('agent_run', fn ($instanceId) => $instanceId)
+                ->showSearchField(false)
+                ->showCount());
     }
 
     public function buildShowConfig(): void
@@ -34,7 +41,8 @@ class AgentRunShow extends SharpShow
                 ->addColumn(6, fn (ShowLayoutColumn $column) => $column->withField('machine:name')->withField('severity')->withField('summary'))
                 ->addColumn(6, fn (ShowLayoutColumn $column) => $column->withField('objective')))
             ->addSection('Report', fn (ShowLayoutSection $section) => $section
-                ->addColumn(12, fn (ShowLayoutColumn $column) => $column->withField('report')));
+                ->addColumn(12, fn (ShowLayoutColumn $column) => $column->withField('report')))
+            ->addEntityListSection(PendingActionEntity::class);
     }
 
     protected function find(mixed $id): array
