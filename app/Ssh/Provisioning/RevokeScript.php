@@ -14,6 +14,7 @@ class RevokeScript
     {
         $user = $machine->username;
         SudoersBuilder::assertValidUser($user);
+        $name = ProvisionScript::commentSafe($machine->name);
 
         $purgeBlock = $purge ? <<<'BASH'
 
@@ -27,7 +28,7 @@ BASH : '';
 
         return <<<BASH
 #!/usr/bin/env bash
-# Sentinel access revocation for "{$machine->name}" - generated, review before running as root.
+# Sentinel access revocation for "{$name}" - generated, review before running as root.
 # Closes the door first (SSH key, sudo rights, wrappers), then ends live sessions and locks "{$user}".
 set -uo pipefail
 

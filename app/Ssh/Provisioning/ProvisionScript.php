@@ -21,6 +21,7 @@ class ProvisionScript
     {
         $user = $machine->username;
         SudoersBuilder::assertValidUser($user);
+        $name = self::commentSafe($machine->name);
 
         $publicKey = $machine->publicKey();
         $sourceIps = SourceIps::configured();
@@ -33,7 +34,7 @@ class ProvisionScript
 
         return <<<BASH
 #!/usr/bin/env bash
-# Sentinel provisioning for "{$machine->name}" - generated, review before running as root.
+# Sentinel provisioning for "{$name}" - generated, review before running as root.
 # Creates user "{$user}" (no password, SSH key only, restricted) and grants it sudo for a fixed list of
 # commands. Safe to re-run. To revoke: php artisan sentinel:revoke <machine>
 set -euo pipefail
@@ -114,5 +115,11 @@ BASH;
     public function wrapperBody(string $wrapper): string
     {
         return $this->bundle->wrappers()[$wrapper];
+    }
+
+    /** The machine name as it may appear in a comment of a root script: on one line, whatever was stored. */
+    public static function commentSafe(string $name): string
+    {
+        return preg_replace('/[\x00-\x1F\x7F]/u', ' ', $name) ?? '';
     }
 }

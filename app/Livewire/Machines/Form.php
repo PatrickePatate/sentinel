@@ -67,7 +67,8 @@ class Form extends Component
     public function save()
     {
         $data = $this->validate([
-            'name' => ['required', 'string', 'max:100'],
+            // No control characters: the name ends up in the provisioning script, which runs as root.
+            'name' => ['required', 'string', 'max:100', 'regex:/^[^\x00-\x1F\x7F]+$/u'],
             'host' => ['required', 'string', 'max:255', function (string $attribute, mixed $value, Closure $fail) {
                 $isHostname = preg_match('/^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/i', (string) $value);
 
