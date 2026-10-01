@@ -339,3 +339,22 @@ it('treats empty model env values as unset so the provider default is used', fun
     putenv('SENTINEL_GATE_MODEL');
     unset($_ENV['SENTINEL_GATE_MODEL'], $_SERVER['SENTINEL_GATE_MODEL']);
 });
+
+it('detects the telegram chat id from the message sent to the bot', function () {
+    $form = Livewire::test(App\Livewire\Channels\Form::class);
+    $code = $form->get('start_code');
+    Http::fake(['api.telegram.org/*' => Http::response(['ok' => true, 'result' => [
+        ['update_id' => 1, 'message' => ['chat' => ['id' => 4242, 'first_name' => 'Ada'], 'from' => ['id' => 4242], 'text' => "/start {$code}"]],
+        ['update_id' => 2, 'message' => ['chat' => ['id' => 666], 'from' => ['id' => 666], 'text' => '/start wrongcode']],
+    ]])]);
+
+    $form->call('detectChat')->assertHasErrors('bot_token')
+        ->set('bot_token', '123:ABC')->call('detectChat')
+        ->assertHasNoErrors()->assertSet('chat_id', '4242')->assertSet('approver_ids', '4242');
+});
+
+it('explains when nothing was sent to the telegram bot yet', function () {
+    Http::fake(['api.telegram.org/*' => Http::response(['ok' => true, 'result' => []])]);
+
+    Livewire::test(App\Livewire\Channels\Form::class)->set('bot_token', '123:ABC')->call('detectChat')->assertHasErrors('chat_id');
+});

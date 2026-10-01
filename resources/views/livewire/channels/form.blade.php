@@ -12,7 +12,12 @@
                     <x-ui.field label="Bot token" name="bot_token" hint="Write-only (from @BotFather). Leave empty to keep the current one.">
                         <x-ui.input type="password" wire:model="bot_token" autocomplete="off" :placeholder="$hasToken ? '•••••• (kept)' : ''" />
                     </x-ui.field>
-                    <x-ui.field label="Chat id" name="chat_id"><x-ui.input wire:model="chat_id" maxlength="32" /></x-ui.field>
+                    <x-ui.field label="Chat id" name="chat_id" hint="Send this to your bot (or in a group it belongs to): /start {{ $start_code }} — then press Detect. Fills the chat id and, if empty, your user id below.">
+                        <div class="flex gap-2">
+                            <x-ui.input wire:model="chat_id" maxlength="32" />
+                            <x-ui.button type="button" variant="ghost" wire:click="detectChat" wire:loading.attr="disabled" wire:target="detectChat">Detect</x-ui.button>
+                        </div>
+                    </x-ui.field>
                     <x-ui.field label="Telegram user ids allowed to approve" name="approver_ids" hint="Comma separated. Anyone else pressing a button is refused and audited. Empty = the chat itself (private chats only)."><x-ui.input wire:model="approver_ids" maxlength="255" /></x-ui.field>
                 @endif
 
