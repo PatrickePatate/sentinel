@@ -83,6 +83,9 @@ class TelegramClient
             throw new RuntimeException("Telegram {$method} failed: ".($response->json('description') ?? 'HTTP '.$response->status()));
         }
 
-        return $response->json('result') ?? [];
+        // Some methods (setWebhook, answerCallbackQuery) answer `result: true`.
+        $result = $response->json('result');
+
+        return is_array($result) ? $result : [];
     }
 }

@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
 use Laravel\Ai\Tools\Request;
+use App\Notifications\Channels\TelegramClient;
 use Livewire\Livewire;
 use Spatie\Activitylog\Models\Activity;
 use Tests\TestCase;
@@ -357,4 +358,12 @@ it('explains when nothing was sent to the telegram bot yet', function () {
     Http::fake(['api.telegram.org/*' => Http::response(['ok' => true, 'result' => []])]);
 
     Livewire::test(App\Livewire\Channels\Form::class)->set('bot_token', '123:ABC')->call('detectChat')->assertHasErrors('chat_id');
+});
+
+it('accepts the boolean result Telegram returns when registering the webhook', function () {
+    Http::fake(['api.telegram.org/*' => Http::response(['ok' => true, 'result' => true])]);
+
+    TelegramClient::withToken('123:ABC')->setWebhook('https://example.test/hook', 'secret');
+
+    Http::assertSentCount(1);
 });

@@ -33,6 +33,7 @@ class Index extends Component
             TelegramWebhook::register(NotificationChannel::where('type', 'telegram')->findOrFail($id));
             $this->dispatch('toast', message: 'Webhook registered', type: 'success');
         } catch (Throwable $e) {
+            report($e);
             $this->dispatch('toast', message: 'Registration failed', description: $e->getMessage(), type: 'error');
         }
     }

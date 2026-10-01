@@ -10,10 +10,12 @@ class TelegramWebhook
 {
     public static function register(NotificationChannel $channel): string
     {
-        $url = route('sentinel.telegram.webhook', $channel);
+        // From the back-office, trust the host the admin is actually browsing on (APP_URL is often a stale http://localhost).
+        $path = route('sentinel.telegram.webhook', $channel, false);
+        $url = app()->runningInConsole() ? route('sentinel.telegram.webhook', $channel) : request()->getSchemeAndHttpHost().$path;
 
         if (! str_starts_with($url, 'https://')) {
-            throw new InvalidArgumentException("Telegram only delivers to public HTTPS URLs (APP_URL is {$url}).");
+            throw new InvalidArgumentException("Telegram only delivers to public HTTPS URLs (got {$url}; open the back-office through its public HTTPS address, or fix APP_URL for the CLI).");
         }
 
         $settings = $channel->settings;
