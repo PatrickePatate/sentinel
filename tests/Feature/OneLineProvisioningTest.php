@@ -78,7 +78,9 @@ it('does not pin a key the machine did not report', function () {
     $this->post("/provision/{$machine->id}/{$token}/callback", ['fingerprints' => HostKeyFingerprint::of('ssh-rsa AAAAother')])
         ->assertStatus(202)->assertSee('did not report');
 
-    expect($machine->fresh()->host_key_fingerprint)->toBeNull()->and($machine->fresh()->provision_token)->not->toBeNull();
+    // The token is spent either way: a leaked link cannot be used to replace what the machine reported.
+    expect($machine->fresh()->host_key_fingerprint)->toBeNull()->and($machine->fresh()->provision_token)->toBeNull();
+    $this->post("/provision/{$machine->id}/{$token}/callback", ['fingerprints' => reportedFingerprints($machine)])->assertNotFound();
 });
 
 it('ignores malformed fingerprints', function () {

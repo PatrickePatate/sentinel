@@ -38,13 +38,15 @@ class ProvisionController extends Controller
             return $this->text("No valid host key fingerprint was reported.\n", 422);
         }
 
-        $machine->forceFill(['host_keys_reported' => $fingerprints, 'provisioned_at' => now()])->save();
+        // One callback per token: the URL ends up in shell history and proxy logs, and a second report must not
+        // replace the one the machine made. A retry takes a new link from the dashboard.
+        $machine->forceFill(['host_keys_reported' => $fingerprints, 'provisioned_at' => now(), 'provision_token' => null, 'provision_token_expires_at' => null])->save();
 
         [$status, $presented] = $pinner->pinIfReported($machine);
 
         $lines = match ($status) {
             HostKeyPinner::PINNED => ["Host key pinned ({$presented})."],
-            HostKeyPinner::MISMATCH => ["Sentinel sees host key {$presented}, which this machine did not report: nothing was pinned. Something sits between Sentinel and this machine, or the address is wrong."],
+            HostKeyPinner::MISMATCH => ["Sentinel sees host key {$presented}, which this machine did not report: nothing was pinned. Something sits between Sentinel and this machine, or the address is wrong. This link is now used up: get a new one from the dashboard to retry."],
             default => ['Sentinel could not open an SSH connection to this machine from its side (firewall, wrong host or port?). Pin the host key from the dashboard once it can.'],
         };
 
@@ -53,10 +55,6 @@ class ProvisionController extends Controller
             $lines[] = $client->state === 'unreachable'
                 ? "Sentinel could not log in yet: {$client->error}"
                 : "Sentinel can log in; client {$client->label()}.";
-
-            if ($client->state !== 'unreachable') {
-                $machine->forceFill(['provision_token' => null, 'provision_token_expires_at' => null])->save();
-            }
         }
 
         return $this->text(implode("\n", $lines)."\n", $status === HostKeyPinner::PINNED ? 200 : 202);
