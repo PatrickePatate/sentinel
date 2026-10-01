@@ -135,6 +135,10 @@ TXT,
     ],
 
     'actions' => [
+        // Ed25519 key that signs client bundles; machines only install bundles signed by it. Kept out of the database on
+        // purpose: a database dump with the SSH keys must not be enough to push a bundle. Created on first use.
+        'bundle_signing_key' => env('SENTINEL_BUNDLE_SIGNING_KEY_PATH', storage_path('app/private/bundle-signing.key')),
+
         'use_sudo' => env('SENTINEL_USE_SUDO', true),
 
         // Packages the agent may upgrade (fnmatch patterns). Empty = none: the action fails closed.

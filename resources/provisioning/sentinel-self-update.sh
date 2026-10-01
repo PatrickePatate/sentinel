@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Managed by Sentinel. Installs a client bundle (wrappers + sudoers policy) read from stdin, after validating it.
-# It is part of the base install and is never replaced by a remote update: changing it means re-running the
+# The bundle must be signed by the Sentinel key below: wrappers run as root, so without the signature anyone holding
+# the Sentinel SSH key could install a wrapper that is just a root shell. It is part of the base install and is never replaced by a remote update: changing it means re-running the
 # provisioning one-liner as root. It refuses anything that would widen what the Sentinel user may do beyond the
 # fixed list of command shapes below.
 #
@@ -13,6 +14,7 @@ SBIN=/usr/local/sbin
 SHARE=/usr/local/share/sentinel
 SUDOERS=/etc/sudoers.d/sentinel
 UPDATER_VERSION='__UPDATER_VERSION__'
+ALLOWED_SIGNER='__ALLOWED_SIGNER__'
 
 die() { echo "sentinel-self-update: $*" >&2; exit 1; }
 
@@ -24,8 +26,20 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mkdir "$work/files"
 
+# --- verify the signature before reading anything else ----------------------------------------------------------
+command -v ssh-keygen >/dev/null || die "ssh-keygen is required to verify the bundle"
+head -c 4194304 > "$work/input"
+marker='-----BEGIN SSH SIGNATURE-----'
+grep -qxF -- "$marker" "$work/input" || die "the bundle is not signed"
+sed "/^${marker}\$/,\$d" "$work/input" > "$work/bundle"
+sed -n "/^${marker}\$/,\$p" "$work/input" > "$work/bundle.sig"
+printf '%s\n' "$ALLOWED_SIGNER" > "$work/allowed_signers"
+ssh-keygen -Y verify -f "$work/allowed_signers" -I sentinel -n sentinel-bundle -s "$work/bundle.sig" < "$work/bundle" >/dev/null 2>&1 \
+    || die "the bundle signature is not valid"
+
 # --- parse ---------------------------------------------------------------------------------------------------
 user=; version=; sudoers_b64=; current=; current_name=; files=()
+exec < "$work/bundle"
 IFS= read -r header || die "empty bundle"
 [[ $header == 'SENTINEL-BUNDLE 1' ]] || die "unsupported bundle format"
 

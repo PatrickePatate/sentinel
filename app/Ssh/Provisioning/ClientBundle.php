@@ -26,7 +26,7 @@ class ClientBundle
         'sentinel-web-config',
     ];
 
-    public function __construct(private SudoersBuilder $sudoers) {}
+    public function __construct(private SudoersBuilder $sudoers, private BundleSigner $signer) {}
 
     /** @return array<string, string> wrapper name => body */
     public function wrappers(): array
@@ -45,8 +45,19 @@ class ClientBundle
         return $this->sudoers->render($user);
     }
 
-    /** The bundle text the updater reads on stdin (see resources/provisioning/sentinel-self-update.sh). */
+    /** The bundle text the updater reads on stdin, signed (see resources/provisioning/sentinel-self-update.sh). */
     public function render(Machine|string $machine): string
+    {
+        return $this->sign($this->unsigned($machine));
+    }
+
+    /** Appends the signature the updater checks before reading anything else of the bundle. */
+    public function sign(string $bundle): string
+    {
+        return $bundle.$this->signer->sign($bundle);
+    }
+
+    public function unsigned(Machine|string $machine): string
     {
         $user = $machine instanceof Machine ? $machine->username : $machine;
         SudoersBuilder::assertValidUser($user);
@@ -74,13 +85,21 @@ class ClientBundle
 
     public function updaterBody(): string
     {
-        return strtr(file_get_contents(resource_path('provisioning/sentinel-self-update.sh')), ['__UPDATER_VERSION__' => $this->updaterVersion()]);
+        return strtr($this->updaterTemplate(), ['__UPDATER_VERSION__' => $this->updaterVersion()]);
     }
 
-    /** The updater is not updatable remotely: when this changes, the machine needs the provisioning one-liner again. */
+    /**
+     * The updater is not updatable remotely: when this changes (its code, or the signing key it trusts), the machine
+     * needs the provisioning one-liner again.
+     */
     public function updaterVersion(): string
     {
-        return substr(hash('sha256', file_get_contents(resource_path('provisioning/sentinel-self-update.sh'))), 0, 12);
+        return substr(hash('sha256', $this->updaterTemplate()), 0, 12);
+    }
+
+    private function updaterTemplate(): string
+    {
+        return strtr(file_get_contents(resource_path('provisioning/sentinel-self-update.sh')), ['__ALLOWED_SIGNER__' => $this->signer->allowedSigner()]);
     }
 
     /** The content of the version file a machine on this bundle carries. */

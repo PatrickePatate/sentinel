@@ -20,6 +20,7 @@
     <php>
         <env name="APP_ENV" value="testing"/>
         <env name="SENTINEL_USE_SUDO" value="false"/>
+        <env name="SENTINEL_BUNDLE_SIGNING_KEY_PATH" value="storage/framework/testing/bundle-signing.key"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
