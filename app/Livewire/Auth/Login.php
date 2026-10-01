@@ -26,14 +26,18 @@ class Login extends Component
 
         $throttleKey = Str::lower($this->email).'|'.request()->ip();
 
-        if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
-            $this->addError('email', 'Too many attempts. Try again in '.RateLimiter::availableIn($throttleKey).' seconds.');
+        // Per account and IP, plus per IP alone so one address cannot spray passwords across many accounts.
+        $ipKey = 'login-ip|'.request()->ip();
+
+        if (RateLimiter::tooManyAttempts($throttleKey, 5) || RateLimiter::tooManyAttempts($ipKey, 20)) {
+            $this->addError('email', 'Too many attempts. Try again in '.max(RateLimiter::availableIn($throttleKey), RateLimiter::availableIn($ipKey)).' seconds.');
 
             return;
         }
 
         if (! Auth::attempt(['email' => $this->email, 'password' => $this->password], $this->remember)) {
             RateLimiter::hit($throttleKey);
+            RateLimiter::hit($ipKey, 600);
             $this->addError('email', 'These credentials do not match our records.');
 
             return;

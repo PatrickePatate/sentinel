@@ -38,6 +38,14 @@ it('logs an admin in, refuses wrong passwords and throttles guessing', function 
     Livewire::test(Login::class)->set('email', 'b@example.org')->set('password', 'x')->call('login')->assertSee('Too many attempts');
 });
 
+it('caps failed logins per IP across many accounts', function () {
+    foreach (range(1, 20) as $i) {
+        Livewire::test(Login::class)->set('email', "user{$i}@example.org")->set('password', 'x')->call('login');
+    }
+
+    Livewire::test(Login::class)->set('email', 'fresh@example.org')->set('password', 'x')->call('login')->assertSee('Too many attempts');
+});
+
 it('serves every page to an admin and to nobody else', function () {
     $machine = Machine::factory()->create(['private_key' => Machine::generatePrivateKey()]);
     $run = AgentRun::create(['machine_id' => $machine->id, 'provider' => 'x', 'objective' => 'x']);
