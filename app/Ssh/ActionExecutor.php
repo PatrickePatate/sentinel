@@ -125,7 +125,10 @@ class ActionExecutor
             'arguments' => $arguments,
             'command' => $command,
             'risk' => $action->risk()->value,
-            'reason' => 'Proposed by the agent: '.(mb_substr(trim($rationale), 0, 500) ?: 'no rationale given'),
+            // The rationale is model text, possibly steered by what an attacker wrote into the logs the agent read.
+            'reason' => 'Proposed by the agent (its own words, not verified: it may repeat text planted in the logs it read): '
+                .(mb_substr(trim($rationale), 0, 500) ?: 'no rationale given')
+                .($actionName === 'fail2ban_unban' ? ' Unbanning lets this address connect again: make sure it is yours before approving.' : ''),
         ]);
         $this->audit->record($machine, $run, 'action_proposed', $actionName, $context + ['pending_action_id' => $pending->id]);
         app(Notifier::class)->approvalNeeded($pending);

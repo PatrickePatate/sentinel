@@ -1,9 +1,12 @@
 @if ($suggestions->isNotEmpty())
-    <x-ui.card title="Suggested memory notes" description="Facts the agent learned about this machine. Nothing is added without you.">
+    <x-ui.card title="Suggested memory notes" description="Suggested by the agent from what it read on the machine, which an attacker may have written into logs. Accepted notes are trusted by every future scan: check them against the scan.">
         <ul class="divide-y">
             @foreach ($suggestions as $suggestion)
                 <li class="flex items-center gap-3 py-2 text-sm" wire:key="note{{ $suggestion->id }}">
                     <span class="flex-1">{{ $suggestion->note }}</span>
+                    @if ($suggestion->agent_run_id)
+                        <a href="{{ route('scans.show', $suggestion->agent_run_id) }}" wire:navigate class="text-xs text-muted-foreground underline">From scan #{{ $suggestion->agent_run_id }}</a>
+                    @endif
                     <x-ui.button size="sm" wire:click="acceptNote({{ $suggestion->id }})">@svg('lucide-check') Add</x-ui.button>
                     <x-ui.button size="sm" variant="outline" wire:click="dismissNote({{ $suggestion->id }})">Dismiss</x-ui.button>
                 </li>

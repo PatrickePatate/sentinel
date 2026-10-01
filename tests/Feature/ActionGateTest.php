@@ -85,7 +85,7 @@ it('refuses when the model says refuse', function () {
     $transport = recordingTransport();
     $machine = Machine::factory()->create(['autonomy_enabled' => true]);
 
-    expect(actions($transport)->request($machine, 'vacuum_journal', [], null, 'x'))->toStartWith('REFUSED')
+    expect(actions($transport)->request($machine, 'clean_apt_cache', [], null, 'x'))->toStartWith('REFUSED')
         ->and($transport->commands)->toBeEmpty();
 });
 
@@ -94,7 +94,7 @@ it('fails closed when the model is unavailable', function () {
     $transport = recordingTransport();
     $machine = Machine::factory()->create(['autonomy_enabled' => true]);
 
-    expect(actions($transport)->request($machine, 'vacuum_journal', [], null, 'x'))->toStartWith('REFUSED')
+    expect(actions($transport)->request($machine, 'clean_apt_cache', [], null, 'x'))->toStartWith('REFUSED')
         ->and($transport->commands)->toBeEmpty();
 });
 
@@ -103,7 +103,7 @@ it('never consults the model nor runs when autonomy is disabled', function () {
     $transport = recordingTransport();
     $machine = Machine::factory()->create();
 
-    expect(actions($transport)->request($machine, 'vacuum_journal', [], null, 'x'))->toStartWith('PENDING_HUMAN_APPROVAL')
+    expect(actions($transport)->request($machine, 'clean_apt_cache', [], null, 'x'))->toStartWith('PENDING_HUMAN_APPROVAL')
         ->and($transport->commands)->toBeEmpty();
     Classification::assertNothingClassified();
 });
@@ -142,7 +142,7 @@ it('caps autonomous actions per scan', function () {
     $executor = actions($transport);
 
     $first = $executor->request($machine, 'clean_apt_cache', [], $run, 'x');
-    $second = $executor->request($machine, 'vacuum_journal', [], $run, 'x');
+    $second = $executor->request($machine, 'refresh_package_lists', [], $run, 'x');
 
     expect($first)->toBe('done')->and($second)->toStartWith('PENDING_HUMAN_APPROVAL')->and($transport->commands)->toHaveCount(1);
 });

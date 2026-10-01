@@ -48,7 +48,7 @@ it('files a proposed fix for approval, linked to the run, without running it or 
         ->and($commands)->toBeEmpty()
         ->and($pending->agent_run_id)->toBe($run->id)
         ->and($pending->status)->toBe('pending')
-        ->and($pending->reason)->toContain('Office IP banned')
+        ->and($pending->reason)->toContain('Office IP banned', 'not verified', 'make sure it is yours')
         ->and(Activity::where('event', 'action_proposed')->count())->toBe(1);
 });
 
