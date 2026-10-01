@@ -13,7 +13,8 @@ class AccessControl
     /** Blocks Sentinel from the machine at once and cancels what was waiting for approval. @return int cancelled actions */
     public function revoke(Machine $machine, bool $purge = false): int
     {
-        $machine->forceFill(['revoked_at' => $machine->revoked_at ?? now(), 'autonomy_enabled' => false])->save();
+        // "Approve always" grants go too: lifting the revocation later must not bring back unattended actions.
+        $machine->forceFill(['revoked_at' => $machine->revoked_at ?? now(), 'autonomy_enabled' => false, 'trusted_actions' => null])->save();
 
         $cancelled = PendingAction::where('machine_id', $machine->id)->where('status', 'pending')
             ->update(['status' => 'rejected', 'decided_at' => now()]);
