@@ -111,6 +111,12 @@ TXT,
         'scheduled_model' => env('SENTINEL_SCHEDULED_MODEL') ?: null,
     ],
 
+    // USD per million tokens, by model name, used to estimate the cost of a run (providers only report tokens).
+    // Runs on a model without an entry show their tokens but no cost. 'cache_read' / 'cache_write' are optional
+    // and default to the input rate. Example:
+    //   'claude-sonnet-5-5' => ['input' => 0.0, 'output' => 0.0, 'cache_read' => 0.0, 'cache_write' => 0.0],
+    'pricing' => [],
+
     'gate' => [
         'provider' => env('SENTINEL_GATE_PROVIDER', 'openrouter'),
         'model' => env('SENTINEL_GATE_MODEL') ?: null,

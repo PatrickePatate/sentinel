@@ -7,6 +7,9 @@ use App\Models\AgentRun;
 use App\Models\Machine;
 use App\Support\Realtime;
 use Closure;
+use Illuminate\Support\Facades\Log;
+use Laravel\Ai\Ai;
+use Laravel\Ai\Responses\Data\TextUsage;
 use Laravel\Ai\Streaming\Events\StreamEvent;
 use Throwable;
 
@@ -129,11 +132,14 @@ class ScanRunner
                     }
                 }
                 $text = $stream->text;
+                $usage = $stream->usage;
             } else {
-                $text = $agent->prompt($prompt, provider: $provider, model: $model)->text;
+                $response = $agent->prompt($prompt, provider: $provider, model: $model);
+                $text = $response->text;
+                $usage = $response->usage;
             }
 
-            $run->update(['status' => 'completed', 'report' => $text, 'progress' => null]);
+            $run->update(['status' => 'completed', 'report' => $text, 'progress' => null] + $this->usageColumns($usage, $provider, $model));
         } catch (Throwable $e) {
             $run->update(['status' => 'failed', 'report' => $e->getMessage(), 'progress' => null]);
         }
@@ -141,5 +147,30 @@ class ScanRunner
         Realtime::push('run', $run->id);
 
         return $run;
+    }
+
+    /** @return array<string, int|float|null> */
+    private function usageColumns(?TextUsage $usage, ?string $provider, ?string $model): array
+    {
+        if (! $usage) {
+            return [];
+        }
+
+        try {
+            // No configured model means the provider's own default one answered.
+            $model ??= Ai::textProvider($provider)->defaultTextModel();
+            $cost = app(CostEstimator::class)->estimate($model, $usage);
+        } catch (Throwable $e) {
+            Log::warning("Could not estimate the cost of a run: {$e->getMessage()}");
+            $cost = null;
+        }
+
+        return [
+            'input_tokens' => $usage->inputTokens,
+            'output_tokens' => $usage->outputTokens,
+            'cache_read_tokens' => $usage->cacheReadInputTokens,
+            'cache_write_tokens' => $usage->cacheWriteInputTokens,
+            'cost_usd' => $cost,
+        ];
     }
 }
