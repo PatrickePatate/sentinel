@@ -19,7 +19,7 @@ trait StartsScans
     public function resetScan(): void
     {
         $this->profile = 'audit';
-        $this->allowActions = (bool) $this->scanTarget()?->autonomy_enabled;
+        $this->allowActions = false;
         $this->objective = config('sentinel.scheduling.profiles.audit.objective');
     }
 
@@ -56,7 +56,7 @@ trait StartsScans
 
         RateLimiter::hit($key, 3600);
 
-        $run = $runner->queue($machine, $this->objective, 'manual', $this->profile, $this->allowActions || $machine->autonomy_enabled);
+        $run = $runner->queue($machine, $this->objective, 'manual', $this->profile, $this->allowActions && ! $machine->autonomy_enabled);
         RunScan::dispatch($machine->id, $this->objective, auth()->id(), 'manual', $run->id, $this->profile);
 
         return $this->redirectRoute('scans.show', $run, navigate: true);

@@ -78,11 +78,11 @@ it('stores the per-scan permission to act on low-risk issues', function () {
     expect(AgentRun::firstOrFail()->allow_actions)->toBeTrue();
 });
 
-it('enables actions on a scan by default when the machine has autonomy', function () {
+it('does not copy the machine autonomy into the scan, so switching it off also stops queued scans', function () {
     $machine = Machine::factory()->create(['autonomy_enabled' => true]);
 
-    expect(app(ScanRunner::class)->queue($machine, 'audit')->allow_actions)->toBeTrue()
-        ->and(app(ScanRunner::class)->queue(Machine::factory()->create(), 'audit')->allow_actions)->toBeFalse();
+    expect(app(ScanRunner::class)->queue($machine, 'audit')->allow_actions)->toBeFalse()
+        ->and(app(ScanRunner::class)->queue($machine, 'audit', allowActions: true)->allow_actions)->toBeTrue();
 });
 
 it('runs the queued scan into the same run and stores the report', function () {

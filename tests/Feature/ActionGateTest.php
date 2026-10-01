@@ -1,6 +1,7 @@
 <?php
 
 use App\Ai\Agents\SysadminAgent;
+use App\Ai\ScanRunner;
 use App\Models\AgentRun;
 use App\Models\Machine;
 use App\Models\PendingAction;
@@ -299,6 +300,18 @@ it('lets an administrator enable autonomy for a single scan without touching the
     $out = actions($transport)->request($machine, 'clean_apt_cache', [], $run, 'free disk space');
 
     expect($out)->toBe('done')->and((bool) $machine->fresh()->autonomy_enabled)->toBeFalse();
+});
+
+it('stops acting autonomously on a queued scan once autonomy is switched off on the machine', function () {
+    Classification::fake(jev(0.01, 0.99, 0.97, 'execute', 0.99));
+    $transport = recordingTransport();
+    $machine = Machine::factory()->create(['autonomy_enabled' => true]);
+    $run = app(ScanRunner::class)->queue($machine, 'audit');
+
+    $machine->update(['autonomy_enabled' => false]);
+    actions($transport)->request($machine->fresh(), 'clean_apt_cache', [], $run, 'free disk space');
+
+    expect(PendingAction::where('action', 'clean_apt_cache')->where('status', 'pending')->exists())->toBeTrue();
 });
 
 it('still holds actions for a human when neither the machine nor the scan allows autonomy', function () {

@@ -21,7 +21,8 @@ class ScanRunner
             'objective' => $objective,
             'trigger' => $trigger,
             'profile' => $profile,
-            'allow_actions' => $allowActions || $machine->autonomy_enabled,
+            // Only the explicit per-scan grant: the machine setting is read live by the gate, so switching it off stops queued scans too.
+            'allow_actions' => $allowActions,
             'status' => 'queued',
         ]), fn (AgentRun $run) => Realtime::push('run', $run->id));
     }

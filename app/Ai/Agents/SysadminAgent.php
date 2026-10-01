@@ -56,7 +56,7 @@ VERDICT : '';
         $medium = $this->machine->autonomy_enabled && $this->machine->autonomy_medium;
         $risks = $medium ? 'LOW or MODERATE-risk' : 'LOW-risk';
         $mediumNote = $medium ? ' Moderate actions can disrupt a running service: request one only when the evidence clearly calls for it.' : ' Medium-risk fixes stay proposals.';
-        $autonomy = $this->run?->allow_actions ? <<<AUTONOMY
+        $autonomy = ($this->run?->allow_actions || $this->machine->autonomy_enabled) ? <<<AUTONOMY
 
 
 An administrator allowed you to act on this scan: when you find a problem that a {$risks} corrective action fixes, request that action yourself instead of proposing it, then verify the result with a read-only tool.
