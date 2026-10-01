@@ -4,9 +4,9 @@ namespace App\Console\Commands;
 
 use App\Models\Machine;
 use App\Ssh\HostKeyFingerprint;
+use App\Ssh\SshConnection;
 use Illuminate\Console\Command;
 use phpseclib3\Crypt\PublicKeyLoader;
-use phpseclib3\Net\SSH2;
 use Throwable;
 
 class CheckMachine extends Command
@@ -35,7 +35,7 @@ class CheckMachine extends Command
 
         $this->line('Key Sentinel presents: '.$key->getPublicKey()->getFingerprint('sha256').' (must be the one in authorized_keys on the machine)');
 
-        $ssh = new SSH2($machine->host, $machine->port, 10);
+        $ssh = SshConnection::open($machine);
 
         try {
             $hostKey = $ssh->getServerPublicHostKey();
@@ -53,7 +53,7 @@ class CheckMachine extends Command
 
         if ($machine->host_key_fingerprint === null) {
             $this->warn('  Host key not pinned yet: pin it in the back-office before scans can run.');
-        } elseif (! hash_equals($machine->host_key_fingerprint, $fingerprint)) {
+        } elseif (! HostKeyFingerprint::matches($machine->host_key_fingerprint, $hostKey) && ! hash_equals($machine->host_key_fingerprint, HostKeyFingerprint::legacy($hostKey))) {
             return $this->failWith("Host key differs from the pinned one ({$machine->host_key_fingerprint}). Wrong host, or the server was reinstalled: verify, then pin again.");
         } else {
             $this->info('✔ Host key matches the pinned fingerprint');

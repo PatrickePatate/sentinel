@@ -4,6 +4,7 @@ namespace App\Ssh\Gate;
 
 use App\Models\Machine;
 use App\Ssh\Actions\ActionTool;
+use App\Ssh\Actions\HasSafeguards;
 use App\Ssh\Actions\RiskLevel;
 use Laravel\Ai\Classification;
 use Laravel\Ai\Classification\Boolean;
@@ -23,6 +24,11 @@ class RiskGate
             return new GateDecision(GateVerdict::Refuse, 'High-risk actions are never executed by the agent.');
         }
 
+        // An explicit, revocable grant by an administrator for this one action on this one machine (see the approvals page).
+        if ($machine->trusts($action->name()) && $action instanceof HasSafeguards) {
+            return new GateDecision(GateVerdict::Execute, 'Allowed by an administrator for this machine.');
+        }
+
         if ($action->risk() === RiskLevel::Medium) {
             return new GateDecision(GateVerdict::AskHuman, 'Medium-risk actions always require human approval.');
         }
@@ -39,9 +45,10 @@ class RiskGate
                 'action' => $action->name(),
                 'description' => $action->description(),
                 'command' => $command,
+                'safeguards' => $action instanceof HasSafeguards ? $action->safeguards() : 'none declared',
             ])->questions([
-                'destructive' => new Boolean('Could running this command on a production server delete data or interrupt a service?'),
-                'reversible' => new Boolean('Can the effect of this command be undone or is it purely regenerable housekeeping?'),
+                'destructive' => new Boolean('Could running this command on a production server delete data or interrupt a service that is currently running correctly (taking into account the declared safeguards)?'),
+                'reversible' => new Boolean('Can the effect of this command be undone, is it purely regenerable housekeeping, or does it only bring something back that was already down (taking into account the declared safeguards)?'),
                 'matches_objective' => new Boolean('Is this command a reasonable step toward the stated objective?'),
                 'verdict' => new Choice('What should happen with this command?', [
                     'execute' => 'Safe to run automatically',
@@ -68,8 +75,8 @@ class RiskGate
 
         $confident = $verdict->choice === 'execute'
             && $scores['execute'] >= config('sentinel.gate.min_execute_confidence')
-            && $scores['destructive'] <= config('sentinel.gate.max_destructive')
-            && $scores['reversible'] >= config('sentinel.gate.min_reversible')
+            && $scores['destructive'] <= $machine->gate('max_destructive')
+            && $scores['reversible'] >= $machine->gate('min_reversible')
             && $scores['matches_objective'] >= config('sentinel.gate.min_matches_objective');
 
         return $confident

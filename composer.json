@@ -8,9 +8,9 @@
     "require": {
         "php": "^8.3",
         "blade-ui-kit/blade-icons": "^1.10",
-        "code16/sharp": "^9.0",
         "laravel/ai": "^1.0",
         "laravel/framework": "^13.17",
+        "laravel/reverb": "^1.12",
         "laravel/tinker": "^3.0",
         "livewire/livewire": "^4.0",
         "mallardduck/blade-lucide-icons": "^2.0",
@@ -60,7 +60,6 @@
         ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
-            "@php artisan vendor:publish --tag=sharp-assets --force",
             "@php artisan package:discover --ansi"
         ],
         "post-update-cmd": [

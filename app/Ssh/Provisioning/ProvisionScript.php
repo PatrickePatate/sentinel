@@ -5,25 +5,19 @@ namespace App\Ssh\Provisioning;
 use App\Models\Machine;
 
 /**
- * Renders the bash script an administrator runs ONCE, as root, on a machine to let
- * Sentinel in: locked unprivileged user, restricted SSH key, root-owned validating
- * wrappers, and a sudoers policy generated from the catalogs and checked by visudo.
+ * Renders the bash script an administrator runs ONCE, as root, on a machine to let Sentinel in: locked
+ * unprivileged user, restricted SSH key, and the client bundle (root-owned validating wrappers + a sudoers policy
+ * checked by visudo) installed through the same updater later used for remote updates.
+ *
+ * Meant to be piped: `curl -fsSL <url> | sudo bash`. The whole script lives in a function so bash has read all of it
+ * before anything runs, and no command can swallow the rest of the script from stdin.
  */
 class ProvisionScript
 {
-    private const WRAPPERS = [
-        'sentinel-upgrade-package',
-        'sentinel-fail2ban-unban',
-        'sentinel-fail2ban-filter',
-        'sentinel-fail2ban-jail',
-        'sentinel-fail2ban-remove',
-        'sentinel-sshd-harden',
-        'sentinel-install-package',
-    ];
+    public function __construct(private ClientBundle $bundle) {}
 
-    public function __construct(private SudoersBuilder $sudoers) {}
-
-    public function render(Machine $machine): string
+    /** @param  string|null  $callbackUrl  Where the script reports the host key fingerprints (pins them without any copy-paste). */
+    public function render(Machine $machine, ?string $callbackUrl = null): string
     {
         $user = $machine->username;
         SudoersBuilder::assertValidUser($user);
@@ -31,13 +25,11 @@ class ProvisionScript
         $publicKey = $machine->publicKey();
         $sourceIps = SourceIps::configured();
         $authorizedOptions = 'restrict'.($sourceIps ? ',from="'.implode(',', $sourceIps).'"' : '');
-
-        $wrappers = '';
-        foreach (self::WRAPPERS as $wrapper) {
-            $wrappers .= $this->installFile('/usr/local/sbin/'.$wrapper, $this->wrapperBody($wrapper), '0755')."\n";
-        }
-
-        $sudoers = $this->sudoers->render($user);
+        $updater = ClientBundle::UPDATER_PATH;
+        $version = $this->bundle->version($user);
+        $updaterBody = rtrim($this->bundle->updaterBody());
+        $bundle = rtrim($this->bundle->render($machine));
+        $callback = $callbackUrl ? "'".str_replace("'", "'\\''", $callbackUrl)."'" : '';
 
         return <<<BASH
 #!/usr/bin/env bash
@@ -46,78 +38,81 @@ class ProvisionScript
 # commands. Safe to re-run. To revoke: php artisan sentinel:revoke <machine>
 set -euo pipefail
 
-[[ \$EUID -eq 0 ]] || { echo "Run as root." >&2; exit 1; }
-[[ -f /etc/debian_version ]] || { echo "Debian/Ubuntu only." >&2; exit 1; }
-command -v visudo >/dev/null || { echo "visudo not found (install sudo)." >&2; exit 1; }
+main() {
+    [[ \$EUID -eq 0 ]] || { echo "Run as root (curl ... | sudo bash)." >&2; exit 1; }
+    [[ -f /etc/debian_version ]] || { echo "Debian/Ubuntu only." >&2; exit 1; }
+    command -v visudo >/dev/null || { echo "visudo not found (install sudo)." >&2; exit 1; }
+    command -v base64 >/dev/null || { echo "base64 not found." >&2; exit 1; }
 
-# 1. Unprivileged user, no usable password ("*": password login impossible, key login still allowed even with UsePAM off), can read logs but not become root freely
-if ! id -u {$user} >/dev/null 2>&1; then
-    useradd --create-home --shell /bin/bash --comment "Sentinel agent" {$user}
-fi
-usermod -p '*' {$user}
-for group in systemd-journal adm; do
-    getent group "\$group" >/dev/null && usermod -aG "\$group" {$user}
-done
+    # 1. Unprivileged user, no usable password ("*": password login impossible, key login still allowed even with UsePAM off)
+    if ! id -u {$user} >/dev/null 2>&1; then
+        useradd --create-home --shell /bin/bash --comment "Sentinel agent" {$user}
+    fi
+    usermod -p '*' {$user}
+    for group in systemd-journal adm; do
+        getent group "\$group" >/dev/null && usermod -aG "\$group" {$user}
+    done
 
-# 2. SSH key, restricted (no forwarding, no pty, no agent)
-home=\$(getent passwd {$user} | cut -d: -f6)
-install -d -m 700 -o {$user} -g {$user} "\$home/.ssh"
-printf '%s\\n' '{$authorizedOptions} {$publicKey}' > "\$home/.ssh/authorized_keys"
-chown {$user}:{$user} "\$home/.ssh/authorized_keys"
-chmod 600 "\$home/.ssh/authorized_keys"
+    # 2. SSH key, restricted (no forwarding, no pty, no agent)
+    local home
+    home=\$(getent passwd {$user} | cut -d: -f6)
+    install -d -m 700 -o {$user} -g {$user} "\$home/.ssh"
+    printf '%s\\n' '{$authorizedOptions} {$publicKey}' > "\$home/.ssh/authorized_keys"
+    chown {$user}:{$user} "\$home/.ssh/authorized_keys"
+    chmod 600 "\$home/.ssh/authorized_keys"
 
-# 3. Root-owned wrappers: they re-validate their arguments, whatever the caller sends
-{$wrappers}
-# 4. sudoers: written to a temp file, checked with visudo, then installed atomically
-tmp=\$(mktemp /etc/sudoers.d/.sentinel-XXXXXX)
-trap 'rm -f "\$tmp"' EXIT
-cat > "\$tmp" <<'SENTINEL_SUDOERS'
-{$sudoers}SENTINEL_SUDOERS
-chmod 0440 "\$tmp"
-visudo -cf "\$tmp" >/dev/null || { echo "Generated sudoers is invalid, nothing installed." >&2; exit 1; }
-mv -f "\$tmp" /etc/sudoers.d/sentinel
-trap - EXIT
+    # 3. The updater (root-owned; it validates every bundle it is given, and cannot be replaced remotely)
+    cat > {$updater} <<'SENTINEL_UPDATER'
+{$updaterBody}
+SENTINEL_UPDATER
+    chown root:root {$updater}
+    chmod 0755 {$updater}
 
-# 5. Sanity checks (informational, never fatal)
-if command -v sshd >/dev/null && sshd -T 2>/dev/null | grep -qE '^allow(users|groups) '; then
-    sshd -T 2>/dev/null | grep -qE "^allowusers {$user}$" \
-        || echo "WARNING: sshd restricts logins (AllowUsers/AllowGroups) and does not list {$user}: add it, then reload sshd." >&2
-fi
-for tool in fail2ban-client ufw certbot; do
-    command -v "\$tool" >/dev/null || echo "Note: \$tool is not installed here: the matching Sentinel tools will report it as unavailable."
-done
+    # 4. The client bundle: root-owned wrappers that re-validate their arguments + the sudoers policy (checked with visudo)
+    {$updater} <<'SENTINEL_BUNDLE'
+{$bundle}
+SENTINEL_BUNDLE
 
-echo "Done. Effective sudo rights of {$user}:"
-sudo -l -U {$user}
-echo "Host key fingerprints of this machine (paste the SHA256:... of the one Sentinel shows when pinning):"
-for pub in /etc/ssh/ssh_host_*_key.pub; do
-    [[ -f "\$pub" ]] && ssh-keygen -lf "\$pub"
-done
+    # 5. Sanity checks (informational, never fatal)
+    if command -v sshd >/dev/null && sshd -T 2>/dev/null | grep -qE '^allow(users|groups) '; then
+        sshd -T 2>/dev/null | grep -qE "^allowusers {$user}\$" \\
+            || echo "WARNING: sshd restricts logins (AllowUsers/AllowGroups) and does not list {$user}: add it, then reload sshd." >&2
+    fi
+    for tool in fail2ban-client ufw certbot; do
+        command -v "\$tool" >/dev/null || echo "Note: \$tool is not installed here: the matching Sentinel tools will report it as unavailable."
+    done
+
+    echo "Done. Effective sudo rights of {$user}:"
+    sudo -l -U {$user}
+
+    # 6. Host keys: shown here, and reported to Sentinel over TLS so it can pin the right one without copy-paste
+    local fingerprints="" pub
+    for pub in /etc/ssh/ssh_host_*_key.pub; do
+        [[ -f "\$pub" ]] || continue
+        fingerprints+="\$(ssh-keygen -lf "\$pub" | awk '{print \$2}')"\$'\\n'
+    done
+    echo "Host key fingerprints of this machine:"
+    printf '%s' "\$fingerprints" | sed 's/^/  /'
+
+    local callback={$callback}
+    if [[ -n "\$callback" ]]; then
+        if command -v curl >/dev/null; then
+            echo "Reporting to Sentinel..."
+            curl -fsS -m 60 --data-urlencode "fingerprints=\$fingerprints" --data-urlencode "version={$version}" "\$callback" </dev/null \\
+                || echo "Could not reach Sentinel (\$callback): pin the host key from the dashboard instead." >&2
+        else
+            echo "curl is not installed: pin the host key from the dashboard using one of the fingerprints above." >&2
+        fi
+    fi
+}
+
+main "\$@"
 
 BASH;
     }
 
     public function wrapperBody(string $wrapper): string
     {
-        $body = file_get_contents(resource_path("provisioning/{$wrapper}.sh"));
-
-        $logCases = collect(config('sentinel.fail2ban.logs'))
-            ->map(fn (string $path, string $key) => "    {$key}) logpath={$path} ;;")
-            ->implode("\n");
-
-        return strtr($body, [
-            '__ALLOWLIST__' => collect(config('sentinel.actions.package_allowlist'))->filter()->map(fn ($p) => "'{$p}'")->implode(' '),
-            '__DENYLIST__' => collect(config('sentinel.actions.package_denylist'))->map(fn ($p) => "'{$p}'")->implode(' '),
-            '__INSTALLABLE__' => collect(config('sentinel.actions.installable_packages'))->map(fn ($p) => "'{$p}'")->implode(' '),
-            '__LOG_CASES__' => $logCases,
-            '__IGNOREIP__' => implode(' ', SourceIps::configured()),
-        ]);
-    }
-
-    private function installFile(string $path, string $content, string $mode): string
-    {
-        $delimiter = 'SENTINEL_FILE_'.strtoupper(substr(md5($path), 0, 8));
-
-        return "cat > {$path} <<'{$delimiter}'\n".rtrim($content)."\n{$delimiter}\nchown root:root {$path}\nchmod {$mode} {$path}";
+        return $this->bundle->wrappers()[$wrapper];
     }
 }

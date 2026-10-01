@@ -5,6 +5,7 @@ namespace App\Ssh\Fake;
 use App\Models\Machine;
 use App\Ssh\CommandResult;
 use App\Ssh\HostKeyFingerprint;
+use App\Ssh\Provisioning\ClientBundle;
 use App\Ssh\SshTransport;
 use Illuminate\Support\Facades\Cache;
 use RuntimeException;
@@ -90,6 +91,19 @@ class FakeTransport implements SshTransport
         // Actions run through `sudo -n` in production; the simulated machine accepts them as root.
         $command = preg_replace('/(^|\|\| |\| )sudo -n /', '$1', $command);
 
+        if (str_starts_with($command, 'cat '.ClientBundle::VERSION_FILE)) {
+            // A fake machine counts as provisioned with whatever bundle exists when Sentinel first looks.
+            $s['client_version'] ??= app(ClientBundle::class)->versionLine(config('sentinel.provisioning.user'));
+
+            return [$ok($s['client_version']."\n"), $s];
+        }
+
+        if (str_starts_with($command, ClientBundle::UPDATER_PATH) && preg_match('/^VERSION ([0-9a-f]{12})$/m', $command, $m)) {
+            $s['client_version'] = "bundle={$m[1]} updater=".app(ClientBundle::class)->updaterVersion();
+
+            return [$ok('installed bundle '.$m[1].' ('.count(ClientBundle::WRAPPERS)." wrappers)\n"), $s];
+        }
+
         if (preg_match("/^systemctl reload -- '([^']+)' 2>&1$/", $command, $m)) {
             $svc = $s['services'][$m[1]] ?? null;
 
@@ -146,11 +160,27 @@ class FakeTransport implements SshTransport
             return [$ok("removed sentinel-{$m[1]}\n"), $s];
         }
 
+        if (str_starts_with($command, '# sentinel-precheck')) {
+            return [$ok($this->precheck($s)), $s];
+        }
+
+        if (preg_match("#^/usr/local/sbin/sentinel-service-recover '([^']+)' 2>&1$#", $command, $m)) {
+            return $this->recover($m[1], $s);
+        }
+
+        if (preg_match("#^/usr/local/sbin/sentinel-web-config (test|reload|rollback) '([^']+)' 2>&1$#", $command, $m)) {
+            return $this->webConfig($m[1], $m[2], $s);
+        }
+
         if (preg_match("/^systemctl restart -- '([^']+)' 2>&1$/", $command, $m)) {
             return $this->restart($m[1], $s);
         }
 
         if (preg_match("/^systemctl status --no-pager --lines=20 -- '([^']+)' 2>&1$/", $command, $m)) {
+            return [$this->status($m[1], $s), $s];
+        }
+
+        if (preg_match("/^journalctl --no-pager -n \\d+ -u '([^']+)' 2>&1$/", $command, $m)) {
             return [$this->status($m[1], $s), $s];
         }
 
@@ -180,13 +210,134 @@ class FakeTransport implements SshTransport
             str_starts_with($command, 'sshd -T') => collect($s['sshd'])->map(fn ($v, $k) => "$k $v")->implode("\n")."\n",
             str_starts_with($command, 'journalctl -u ssh') => $this->authFailures($s),
             str_starts_with($command, 'who; last') => $this->users($s),
+            str_starts_with($command, 'du -xh') => sprintf("%.1fG\t/var\n%.1fG\t/var/lib\n%dM\t/var/log\n%dM\t/var/cache\n", $s['disk_base_gb'] / 4, $s['disk_base_gb'] / 5, $s['logs_mb'], $s['apt_cache_mb']),
+            str_starts_with($command, 'systemctl list-timers') => "NEXT                        LEFT     LAST                        PASSED  UNIT                         ACTIVATES\nWed 2026-10-01 06:00:00 UTC 3h left  Tue 2026-09-30 06:00:00 UTC 20h ago apt-daily.timer              apt-daily.service\n\n1 timers listed.\n",
+            str_starts_with($command, 'journalctl -k') => '',
+            str_starts_with($command, 'systemctl list-units --type=service') => $this->webstack($s),
+            str_starts_with($command, 'for c in "mysqladmin') => $this->databaseHealth($s),
+            str_starts_with($command, 'for d in /var/backups') => "== newest files in /var/backups\n".date('Y-m-d', strtotime('-1 day'))." 03:00  48211902 bytes  /var/backups/db-nightly.sql.gz\n== backup timers\nnone\n== cron entries\n/etc/cron.d/backup:0 3 * * * root /usr/local/bin/backup\n",
+            str_starts_with($command, 'for d in /etc/nginx/sites-enabled') => "== /etc/nginx/sites-enabled\nlrwxrwxrwx 1 root root 34 Sep 17 10:02 default -> /etc/nginx/sites-available/default\n",
+            str_starts_with($command, 'f=$(ls -t') => $this->errorLog($command, $s),
+            str_starts_with($command, 'curl -sS -k -m 8') => $this->probe($s),
             str_starts_with($command, 'ufw status') => $this->firewall($s),
             default => null,
         };
 
+        if ($out === '' && preg_match('/\|\| echo "([^"]+)"$/', $command, $m)) {
+            $out = $m[1]."\n";
+        }
+
         return $out === null
             ? [$ok("bash: line 1: {$this->firstWord($command)}: command not found\n", 127), $s]
             : [$ok($out, $this->exitCode($command, $out)), $s];
+    }
+
+    private const WEB_UNITS = ['nginx', 'php8.3-fpm', 'mysql', 'redis-server'];
+
+    private function webstack(array $s): string
+    {
+        $lines = [];
+
+        foreach (self::WEB_UNITS as $name) {
+            if ($svc = $s['services'][$name] ?? null) {
+                $lines[] = sprintf('%s.service loaded %s %s %s', $name, $svc['state'] === 'active' ? 'active' : $svc['state'], $svc['state'] === 'active' ? 'running' : 'failed', $svc['description']);
+            }
+        }
+
+        return implode("\n", $lines)."\n";
+    }
+
+    private function precheck(array $s): string
+    {
+        $total = $s['disk_total_gb'];
+        $out = 'disk '.(int) ceil(min($this->usedGb($s), $total) / $total * 100)."\n";
+
+        foreach (self::WEB_UNITS as $name) {
+            if ($svc = $s['services'][$name] ?? null) {
+                $out .= "unit {$name}.service {$svc['state']} enabled\n";
+            }
+        }
+
+        $out .= 'config nginx '.(($s['web_config']['nginx']['valid'] ?? true) ? 'ok' : 'fail')."\n";
+
+        return ($s['services']['nginx']['state'] ?? '') === 'active' ? $out."http 200\n" : $out;
+    }
+
+    private function databaseHealth(array $s): string
+    {
+        $line = fn (string $unit, string $up, string $down) => ($s['services'][$unit]['state'] ?? '') === 'active' ? $up : $down;
+
+        return "$ mysqladmin --connect-timeout=3 ping\n".$line('mysql', "mysqld is alive\n", "mysqladmin: connect to server at 'localhost' failed\nerror: 'Can\\'t connect to local MySQL server through socket'\n")
+            ."$ redis-cli ping\n".$line('redis-server', "PONG\n", "Could not connect to Redis at 127.0.0.1:6379: Connection refused\n");
+    }
+
+    private function errorLog(string $command, array $s): string
+    {
+        $broken = collect($s['services'])->filter(fn ($svc) => $svc['state'] !== 'active')->keys();
+
+        return $broken->isEmpty() ? "== /var/log/nginx/error.log\n" : "== /var/log/nginx/error.log\n".date('Y/m/d H:i:s')." [emerg] 1893#1893: unexpected \"}\" in /etc/nginx/sites-enabled/default:14\n";
+    }
+
+    private function probe(array $s): string
+    {
+        return ($s['services']['nginx']['state'] ?? '') === 'active'
+            ? "HTTP 200 in 0.012s (redirect: )\n"
+            : "curl: (7) Failed to connect to 127.0.0.1 port 80 after 0 ms: Couldn't connect to server\nHTTP 000 in 0.000s (redirect: )\n";
+    }
+
+    /** @return array{0: CommandResult, 1: array<string, mixed>} */
+    private function recover(string $name, array $s): array
+    {
+        $svc = $s['services'][$name] ?? null;
+
+        if ($svc === null || ! collect(config('sentinel.actions.recoverable_services'))->contains(fn (string $pattern) => fnmatch($pattern, $name))) {
+            return [new CommandResult("unit {$name} is not on the recoverable allowlist\n", 2), $s];
+        }
+
+        if ($svc['state'] === 'active') {
+            return [new CommandResult("{$name} is already running: nothing to do\n", 0), $s];
+        }
+
+        if ($name === 'nginx' && ! ($s['web_config']['nginx']['valid'] ?? true)) {
+            return [new CommandResult("{$name} is {$svc['state']} but its configuration is invalid: not starting it.\nnginx: [emerg] unexpected \"}\" in /etc/nginx/sites-enabled/default:14\n", 3), $s];
+        }
+
+        if ($svc['broken']) {
+            return [new CommandResult("{$name} was {$svc['state']}, starting it\n{$name} is now: failed\n", 4), $s];
+        }
+
+        $s['services'][$name] = array_replace($svc, ['state' => 'active', 'failure' => '', 'since' => time(), 'pid' => random_int(2000, 30000)]);
+
+        return [new CommandResult("{$name} was {$svc['state']}, starting it\n{$name} is now: active\n", 0), $s];
+    }
+
+    /** @return array{0: CommandResult, 1: array<string, mixed>} */
+    private function webConfig(string $action, string $service, array $s): array
+    {
+        $valid = $s['web_config'][$service]['valid'] ?? true;
+        $good = $s['web_config'][$service]['good'] ?? true;
+        $error = "{$service}: [emerg] unexpected \"}\" in /etc/nginx/sites-enabled/default:14\n{$service}: configuration file /etc/nginx/nginx.conf test failed\n";
+
+        return match ($action) {
+            'test' => $valid
+                ? [new CommandResult("{$service}: the configuration file syntax is ok\nresult: configuration OK (recorded as last known good)\n", 0), $s]
+                : [new CommandResult($error.($good ? "result: configuration INVALID; a last known good copy exists (rollback possible)\n" : "result: configuration INVALID; no known good copy to roll back to\n"), 1), $s],
+            'reload' => $valid
+                ? [new CommandResult("{$service} configuration OK and reloaded\n", 0), $s]
+                : [new CommandResult($error."configuration test failed: NOT reloading\n", 3), $s],
+            default => match (true) {
+                $valid => [new CommandResult("the current {$service} configuration passes its test: nothing to roll back\n", 0), $s],
+                ! $good => [new CommandResult($error."no known good configuration was recorded for {$service}: cannot roll back\n", 3), $s],
+                default => [new CommandResult("restored the last known good configuration; the broken one is kept aside\n{$service} is running with the restored configuration\n", 0), $this->fixConfig($service, $s)],
+            },
+        };
+    }
+
+    private function fixConfig(string $service, array $s): array
+    {
+        $s['web_config'][$service]['valid'] = true;
+
+        return $s;
     }
 
     private function firstWord(string $command): string

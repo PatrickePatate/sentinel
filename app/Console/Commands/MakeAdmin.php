@@ -13,7 +13,7 @@ class MakeAdmin extends Command
 {
     protected $signature = 'sentinel:admin {email} {--name=Admin}';
 
-    protected $description = 'Create a user who can log in to the Sharp back-office (approve root actions, chat with the agent)';
+    protected $description = 'Create a user who can log in to the dashboard (approve root actions, chat with the agent)';
 
     public function handle(): int
     {
@@ -37,7 +37,7 @@ class MakeAdmin extends Command
         $user->is_admin = true;
         $user->save();
 
-        $this->info('Admin created. Log in at /sharp.');
+        $this->info('Admin created. Log in at /login.');
 
         return self::SUCCESS;
     }

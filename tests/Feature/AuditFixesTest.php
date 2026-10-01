@@ -3,20 +3,19 @@
 use App\Ai\Agents\SysadminAgent;
 use App\Jobs\RunScan;
 use App\Livewire\MachineChat;
+use App\Livewire\Machines\Form;
+use App\Livewire\Machines\Index;
 use App\Models\ChatMessage;
 use App\Models\Machine;
 use App\Models\PendingAction;
 use App\Models\User;
 use App\Providers\AppServiceProvider;
-use App\Sharp\Entities\MachineEntity;
-use App\Sharp\Machines\ScanMachineCommand;
 use App\Ssh\ActionCatalog;
 use App\Ssh\ActionExecutor;
 use App\Ssh\AuditTrail;
 use App\Ssh\CommandResult;
 use App\Ssh\Gate\RiskGate;
 use App\Ssh\SshTransport;
-use Code16\Sharp\Utils\Testing\SharpAssertions;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
@@ -25,7 +24,7 @@ use Spatie\Activitylog\Models\Activity;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
-uses(TestCase::class, RefreshDatabase::class, SharpAssertions::class);
+uses(TestCase::class, RefreshDatabase::class);
 
 function pendingCleanCache(?Machine $machine = null): PendingAction
 {
@@ -148,11 +147,9 @@ it('only replays the last messages of a conversation to the model', function () 
 it('stores the author of a queued scan', function () {
     Queue::fake();
     $this->actingAs(User::factory()->admin()->create());
-    $machine = Machine::factory()->create();
+    $machine = Machine::factory()->create(['host_key_fingerprint' => 'SHA256:a']);
 
-    $this->sharpList(MachineEntity::class)
-        ->instanceCommand(ScanMachineCommand::class, $machine->id)
-        ->getForm()->post(['objective' => 'x'])->assertReturnsLink();
+    Livewire::test(Index::class)->call('startScan', $machine->id)->set('objective', 'x')->call('scan');
 
     Queue::assertPushed(RunScan::class, fn ($job) => $job->userId === auth()->id());
 });
@@ -167,12 +164,10 @@ it('refuses to boot with the fake transport in production', function () {
 it('validates the host of a machine', function (string $host, bool $valid) {
     $this->actingAs(User::factory()->admin()->create());
 
-    $response = $this->sharpForm(MachineEntity::class)->store([
-        'name' => 'm', 'host' => $host, 'port' => 22, 'username' => 'sentinel',
-        'private_key' => 'k', 'environment' => 'production', 'autonomy_enabled' => false,
-    ]);
+    $component = Livewire::test(Form::class)
+        ->set('name', 'm')->set('host', $host)->call('save');
 
-    $valid ? $response->assertSessionHasNoErrors() : $response->assertSessionHasErrors('host');
+    $valid ? $component->assertHasNoErrors() : $component->assertHasErrors('host');
 })->with([
     ['203.0.113.10', true], ['web-1.example.org', true], ['2001:db8::1', true],
     ['host; id', false], ['http://x', false], ['a b', false], ['-bad.example.org', false],

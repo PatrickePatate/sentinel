@@ -68,7 +68,8 @@ it('renders a script with valid bash syntax and a restricted key', function () {
     file_put_contents($file, $script);
 
     expect(Process::run(['bash', '-n', $file])->successful())->toBeTrue()
-        ->and($script)->toContain('set -euo pipefail', 'visudo -cf', "usermod -p '*' sentinel", 'restrict,from="203.0.113.9,2001:db8::/64" ssh-ed25519', 'ignoreip = 127.0.0.1/8 ::1 203.0.113.9 2001:db8::/64')
+        ->and($script)->toContain('set -euo pipefail', 'visudo -cf', "usermod -p '*' sentinel", 'restrict,from="203.0.113.9,2001:db8::/64" ssh-ed25519', 'sentinel-self-update')
+        ->and(app(ProvisionScript::class)->wrapperBody('sentinel-fail2ban-jail'))->toContain('ignoreip = 127.0.0.1/8 ::1 203.0.113.9 2001:db8::/64')
         ->and($script)->not->toContain('PRIVATE KEY');
     unlink($file);
 });

@@ -4,21 +4,23 @@
 
 Sentinel connects to your machines over SSH, runs regular security and health audits with an LLM agent, reports what it finds, and can fix routine problems (restart a service, unban an IP, update a package) through a risk gate that keeps a human in charge of everything that matters.
 
-It is built with Laravel 13, the Laravel AI SDK, Livewire 4 and [Sharp](https://sharp.code16.fr) for the back office.
+It is built with Laravel 13, the Laravel AI SDK, Livewire 4, Alpine and Tailwind for the dashboard.
 
 ---
 
 ## Features
 
 - **Scheduled audits.** Each machine is scanned on its own schedule. The agent checks services, logs, fail2ban, pending updates and more, then submits a verdict (severity + report).
-- **Live reports.** Follow a scan as it happens, step by step.
+- **Web server check.** A second kind of scan, scheduled on its own (down to every 15 minutes). The agent finds the web stack on the machine (nginx or apache, php-fpm, mysql/mariadb/postgresql, redis, queues...), tests each component (config tests, database pings, a loopback HTTP probe, error logs) and repairs what it can, each repair going through the risk gate. See below.
+- **Machine memory.** Free-form notes per machine ("shop: nginx, php-fpm, mysql, redis; backups at 03:00"). The agent reads them in every scan and chat, so it knows what *should* run. Context only: notes never lift a refusal and never replace the risk gate.
+- **Live dashboard.** Follow a scan as it happens (report and every command, step by step), see what waits for approval, and watch the activity feed update itself.
 - **Chat with a machine.** Ask the agent questions about a server in plain language.
 - **Act on a scan.** Reply to a finished scan (or press "Fix what you found") and the agent follows up on its own report. Fixes it recommends are filed as approvable actions, listed on the scan page.
 - **Corrective actions with a risk gate.**
   - **Low risk**: may run on its own if autonomy is enabled for the machine *and* a second classifier model agrees.
   - **Medium risk**: always waits for human approval.
   - **High risk**: never executed by the agent.
-- **Approvals anywhere.** Pending actions can be approved or rejected in the back office, by mail, from Telegram buttons, or with `php artisan sentinel:pending`.
+- **Approvals anywhere.** Pending actions can be approved or rejected in the dashboard, by mail, from Telegram buttons, or with `php artisan sentinel:pending`.
 - **Full audit trail.** Every command, its output and every decision is logged.
 
 ## Security model
@@ -28,7 +30,8 @@ Sentinel is designed so that a confused or manipulated model can't damage a serv
 - **No raw shell.** The agent can only call named tools from a fixed catalog (`app/Ssh/ToolCatalog.php`, `app/Ssh/ActionCatalog.php`). Arguments are validated, and output size and runtime are bounded.
 - **Least-privilege remote user.** Provisioning creates a user with no password, a restricted SSH key and a `sudoers` policy that only allows the exact commands Sentinel needs.
 - **Source IP pinning.** The deployed key can be restricted to Sentinel's IPs (`SENTINEL_SOURCE_IPS`, IPv4/IPv6/CIDR).
-- **Host key pinning.** Sentinel refuses to connect when the server's host key doesn't match the pinned fingerprint.
+- **Host key pinning.** Sentinel refuses to connect when the server's host key doesn't match the pinned fingerprint. With the one-line provisioning, the machine reports its own fingerprints over TLS and Sentinel pins the one it sees, so there is nothing to copy by hand.
+- **Validated updates.** Wrappers and sudo policy can be updated over SSH (human-triggered only). The root-owned updater on the machine only accepts a fixed set of command shapes; anything wider needs the provisioning command run again as root.
 - **Tool output is untrusted.** Tool output is never treated as instructions, and it can't lower the severity of a finding.
 - **Deterministic rules come first.** The model can escalate an action's risk, but it can never unlock one.
 - **Revocation.** `sentinel:revoke` disables a machine immediately. `--purge` removes the remote user and files.
@@ -62,7 +65,7 @@ php artisan queue:work
 php artisan schedule:work   # in production: cron `* * * * * php artisan schedule:run`
 ```
 
-The back office is available at `/sharp`.
+The dashboard is at `/login` (sign in with the admin you created). Set `APP_URL` to the address machines and browsers reach Sentinel at.
 
 ## Configuration
 
@@ -85,34 +88,64 @@ The main `.env` settings (see `.env.example` for the full list):
 
 ## Adding a machine
 
-1. Create the machine in the back office.
-2. Generate its provisioning script and run it on the server as root:
+1. **Add it** in the dashboard (Machines → Add machine): name, address (IPv4, IPv6 or hostname) and port.
+2. **Provision it with one command.** On the machine's *Provisioning* tab, issue a link and run the command it shows, as root, on the server:
    ```bash
-   php artisan sentinel:provision <machine-id> --output=provision.sh
+   curl -fsSL 'https://sentinel.example.com/provision/<id>/<token>' | sudo bash
    ```
-   The script creates the Sentinel user, installs the restricted key and sudoers policy, and prints the host key fingerprints.
-3. Pin the host key:
-   ```bash
-   php artisan sentinel:pin-host-key <machine-id>
-   ```
-4. Check that everything works:
-   ```bash
-   php artisan sentinel:check <machine-id>
-   ```
-5. Run a first scan:
-   ```bash
-   php artisan sentinel:scan <machine-id>
-   ```
+   The link is valid for one hour and is bound to this machine. The script creates the restricted user, installs the key and the client bundle, then reports the server's host key fingerprints to Sentinel, which pins the matching one and checks that it can log in. The machine must be able to reach `APP_URL`; if it can't, pin the host key from the dashboard instead (compare with the fingerprint the script prints).
+   From a terminal: `php artisan sentinel:provision <machine-id> --one-liner`. To review a script before running it: `php artisan sentinel:provision <machine-id> --output=provision.sh`.
+3. **Scan it.** Run a first scan from the machine page, or `php artisan sentinel:scan <machine-id>`. `php artisan sentinel:check <machine-id>` diagnoses SSH problems step by step.
+
+### Web server check
+
+The web server analysis is **off by default** and enabled per machine: switch on "Web server analysis" in the machine settings. Until then nothing of it runs: no schedule, no manual "Web server check" in the scan dialog, no scan triggered by a down site. Once on, you set two frequencies: the **quick check** (every 5 minutes to daily, separate from the security audit schedule) and how often the **AI** looks too when the quick check is healthy (every hour to every day, or only when the quick check finds a problem). Per component, the agent can:
+
+| Situation | Action | Risk |
+| --- | --- | --- |
+| A web stack unit is failed or stopped | `start_crashed_service`: only starts a unit that is down, never touches a running one, and refuses a web server whose config test fails | Low |
+| A config change is on disk but not applied | `reload_web_config`: tests first, graceful reload only if the test passes | Low |
+| The web server config fails its own test | `rollback_web_config`: restores the last configuration that passed a test (the broken one is kept next to it), then reloads | Low |
+
+"Low" means the gate may run it on its own when autonomy is enabled for the machine *and* the classifier model is confident; otherwise it waits for approval like any action. The root wrappers (`sentinel-service-recover`, `sentinel-web-config`) enforce the guarantees above themselves, and tell the classifier about them. Rollback needs a "last known good" copy: every passing config test (a scan, or `reload_web_config`) records one, so schedule the check before anything breaks. Extra units can be made recoverable with `SENTINEL_RECOVERABLE_SERVICES` (comma separated, shell globs). Machines provisioned earlier get the new wrappers with a client update.
+
+#### Keeping the web server check cheap and trustworthy
+
+- **Plain check first.** A scheduled web server check starts with plain commands (units, config tests, a loopback HTTP probe) and only calls the model when something is wrong, plus a full AI check at the frequency you chose per machine (6 hours by default; `SENTINEL_PRECHECK=false` makes every scheduled check an AI check). Each plain check also records the root filesystem usage, so the machine page shows a disk trend and the agent sees it (`machine_history`).
+- **Flapping.** The same command running 3 times in 24 hours is no longer run unattended: it waits for a human with the reason "flapping" (`sentinel.gate.flap_threshold`).
+- **Urgent alerts.** A scheduled (or site-triggered) web server check that ends with severity high or critical reaches every channel that takes scan notifications, whatever its minimum severity.
+- **Always allow.** On the approvals page, "Approve and always allow" lets the agent run that action on that machine without asking again. Only for actions whose wrapper enforces its own safeguards (the three web actions); the classifier is skipped, but the per-scan quota and the flapping guard still apply. Revoke on the machine page.
+- **Per-machine gate tuning.** The machine form can tighten (and, within hard bounds, loosen) the gate thresholds and the autonomous actions per scan.
+
+### Public sites and memory suggestions
+
+List a machine's public URLs in its settings. `sentinel:check-sites` (every five minutes) checks status, speed and certificate expiry from Sentinel itself, alerts once after 2 failures (and when the site is back), warns 14 days before a certificate expires, and, when a site stays down, starts a web server check on that machine (`SENTINEL_SCAN_ON_SITE_DOWN=false` to only alert). The agent can also suggest memory notes (facts it learned about a machine); they wait on the machine page until you add or dismiss them.
+
+### Realtime (WebSockets)
+
+With Laravel Reverb the server pushes "something changed" to the dashboard, which re-renders at once; the polling stays as a slow safety net. Set `SENTINEL_REALTIME=true` and the `REVERB_*` / `VITE_REVERB_*` variables (see `.env.example`), run `php artisan reverb:start` next to the web server, and rebuild the assets (a running Vite or `artisan serve` process must be restarted to see new variables). Without it, the dashboard polls every few seconds. Behind a reverse proxy, proxy the WebSocket port and set `REVERB_HOST`/`REVERB_PORT`/`REVERB_SCHEME` to the public address.
+
+### Updating machines
+
+When the wrappers, limits or sudo rules change in Sentinel (a new release, a changed `.env` list), machines keep running the previous *client bundle* until you update them. The dashboard shows who is outdated; update from the machine page, from the machines list ("Update clients"), or:
+
+```bash
+php artisan sentinel:update --all        # or: sentinel:update <machine-id>, --check to only look
+```
+
+Updates go over the existing SSH access, through a root-owned updater installed at provisioning time. It validates what it installs: only wrapper scripts named `sentinel-*` and sudo rules of the known shapes are accepted. It cannot replace itself, so a change to the updater (rare) needs the provisioning command run again.
 
 ## Artisan commands
 
 | Command | Description |
 | --- | --- |
 | `sentinel:admin {email}` | Create or promote an admin user |
-| `sentinel:provision {machine}` | Print or write the provisioning script (`--sudoers` for the policy only) |
-| `sentinel:pin-host-key {machine}` | Pin the server's SSH host key |
+| `sentinel:provision {machine}` | Print or write the provisioning script (`--sudoers` for the policy only, `--one-liner` for the `curl \| sudo bash` command) |
+| `sentinel:update {machine?}` | Check or update the client bundle on machines (`--all`, `--check`) |
+| `sentinel:pin-host-key {machine}` | Pin the server's SSH host key by hand (the one-liner does it for you) |
 | `sentinel:check {machine}` | Diagnose SSH and authentication problems |
 | `sentinel:scan {machine}` | Run a scan now (`--objective`, `--provider`, `--model`) |
+| `sentinel:check-sites` | Check the public sites of all machines (scheduled every five minutes) |
 | `sentinel:scan-due` | Run the scans that are due (scheduled every minute) |
 | `sentinel:pending {id?}` | Review, approve or `--reject` pending actions |
 | `sentinel:revoke {machine}` | Revoke access (`--purge` to clean the server, `--lift` to undo) |

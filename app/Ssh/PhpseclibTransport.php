@@ -13,7 +13,7 @@ class PhpseclibTransport implements SshTransport
     {
         $machine->assertActive();
 
-        $ssh = new SSH2($machine->host, $machine->port, 10);
+        $ssh = SshConnection::open($machine);
         $ssh->setTimeout($timeoutSeconds);
 
         $this->verifyHostKey($ssh, $machine);
@@ -43,8 +43,17 @@ class PhpseclibTransport implements SshTransport
             throw new RuntimeException("Host key of {$machine->name} is not pinned yet ({$fingerprint}). Pin it before use.");
         }
 
-        if (! hash_equals($machine->host_key_fingerprint, $fingerprint)) {
-            throw new RuntimeException("Host key mismatch for {$machine->name}: refusing to connect.");
+        if (HostKeyFingerprint::matches($machine->host_key_fingerprint, $publicKey)) {
+            return;
         }
+
+        // A pin made before the fingerprint was computed like ssh-keygen does: same key, old notation. Upgrade it.
+        if (hash_equals($machine->host_key_fingerprint, HostKeyFingerprint::legacy($publicKey))) {
+            $machine->forceFill(['host_key_fingerprint' => $fingerprint])->save();
+
+            return;
+        }
+
+        throw new RuntimeException("Host key mismatch for {$machine->name} (pinned {$machine->host_key_fingerprint}, server presents {$fingerprint}): refusing to connect.");
     }
 }

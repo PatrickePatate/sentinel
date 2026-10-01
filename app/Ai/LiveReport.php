@@ -3,6 +3,7 @@
 namespace App\Ai;
 
 use App\Models\AgentRun;
+use App\Support\Realtime;
 use Laravel\Ai\Streaming\Events\StreamEvent;
 use Laravel\Ai\Streaming\Events\TextDelta;
 use Laravel\Ai\Streaming\Events\ToolCall;
@@ -26,6 +27,7 @@ class LiveReport
             if (microtime(true) - $this->lastWrite >= $this->interval) {
                 $this->lastWrite = microtime(true);
                 $this->run->update(['report' => $this->buffer]);
+                Realtime::push('run', $this->run->id);
             }
         } elseif ($event instanceof ToolCall) {
             // Text written before a tool call is a separate paragraph from what follows it.
@@ -35,6 +37,7 @@ class LiveReport
 
             $this->lastWrite = microtime(true);
             $this->run->update(['report' => $this->buffer ?: null, 'progress' => "Running {$event->toolCall->name}…"]);
+            Realtime::push('run', $this->run->id);
         }
     }
 }

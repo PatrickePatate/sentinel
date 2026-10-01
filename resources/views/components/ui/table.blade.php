@@ -1,0 +1,1 @@
+<table {{ $attributes->class('w-full caption-bottom text-sm [&_th]:h-10 [&_th]:px-4 [&_th]:text-left [&_th]:align-middle [&_th]:text-xs [&_th]:font-medium [&_th]:uppercase [&_th]:tracking-wide [&_th]:text-muted-foreground [&_td]:px-4 [&_td]:py-3 [&_td]:align-middle [&_tbody_tr]:border-t [&_tbody_tr:hover]:bg-muted/40') }}>{{ $slot }}</table>

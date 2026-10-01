@@ -28,6 +28,9 @@ class SudoersBuilder
             }
         }
 
+        // The bundle updater is part of the base install: it validates what it installs (see sentinel-self-update.sh).
+        $rules[] = ClientBundle::UPDATER_PATH;
+
         $rules = array_values(array_unique($rules));
         sort($rules);
 

@@ -1,30 +1,17 @@
-<div class="row assistant" style="max-width:100%">
-    <div class="avatar">@svg($icon)</div>
-    <div class="bubble md" style="max-width:100%;flex:1">
-        <div class="scan-meta">
-            <span class="badge {{ $turn->status === 'failed' ? 'prod' : '' }}">{{ $turn->status }}</span>
-            @if ($turn->severity)
-                <span class="badge {{ in_array($turn->severity, ['high', 'critical']) ? 'prod' : '' }}">severity: {{ $turn->severity }}</span>
-            @endif
-            @if ($turn->pendingActions->isNotEmpty())
-                <span class="badge">{{ $turn->pendingActions->where('status', 'pending')->count() }} awaiting approval / {{ $turn->pendingActions->count() }} actions</span>
-            @endif
-            @if ($turn->progress)
-                <span class="hint">{{ $turn->progress }}</span>
-            @endif
-        </div>
-
-        @if ($turn->summary)
-            <p><strong>{{ $turn->summary }}</strong></p>
-        @endif
-
-        @if (filled($turn->report))
-            {!! \App\Support\SafeMarkdown::render($turn->report) !!}
-        @elseif ($turn->isActive())
-            <span class="typing"><i></i><i></i><i></i></span>
-            <div class="hint">{{ $turn->status === 'queued' ? 'Waiting for a worker to pick it up…' : 'The agent is investigating…' }}</div>
-        @else
-            <em class="hint">(no report)</em>
-        @endif
+<x-ui.card>
+    <div class="mb-4 flex flex-wrap items-center gap-2">
+        <x-ui.status-badge :status="$turn->status" />
+        @if ($turn->severity)<x-ui.status-badge :status="$turn->severity" />@endif
+        @if ($turn->progress)<span class="text-xs text-muted-foreground">{{ $turn->progress }}</span>@endif
+        <span class="ml-auto text-xs text-muted-foreground">{{ $isScan ? $turn->objective : '' }}</span>
     </div>
-</div>
+    @if ($turn->summary)<p class="mb-3 font-semibold">{{ $turn->summary }}</p>@endif
+    @if (filled($turn->report))
+        <div class="md">{!! \App\Support\SafeMarkdown::render($turn->report) !!}</div>
+    @elseif ($turn->isActive())
+        <span class="typing"><i></i><i></i><i></i></span>
+        <p class="text-xs text-muted-foreground">{{ $turn->status === 'queued' ? 'Waiting for a queue worker to pick it up…' : 'The agent is investigating…' }}</p>
+    @else
+        <p class="text-sm italic text-muted-foreground">(no report)</p>
+    @endif
+</x-ui.card>

@@ -5,6 +5,8 @@ use App\Ai\ScanRunner;
 use App\Ai\Severity;
 use App\Ai\Tools\SubmitVerdictTool;
 use App\Jobs\RunScan;
+use App\Livewire\Channels\Index;
+use App\Livewire\Machines\Form;
 use App\Models\AgentRun;
 use App\Models\Machine;
 use App\Models\NotificationChannel;
@@ -14,21 +16,19 @@ use App\Notifications\ActionApprovalNotification;
 use App\Notifications\Notifier;
 use App\Notifications\ScanReportNotification;
 use App\Notifications\TestNotification;
-use App\Sharp\Entities\MachineEntity;
-use App\Sharp\Entities\NotificationChannelEntity;
 use App\Ssh\ActionCatalog;
 use App\Ssh\CommandResult;
 use App\Ssh\SshTransport;
-use Code16\Sharp\Utils\Testing\SharpAssertions;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
 use Laravel\Ai\Tools\Request;
+use Livewire\Livewire;
 use Spatie\Activitylog\Models\Activity;
 use Tests\TestCase;
 
-uses(TestCase::class, RefreshDatabase::class, SharpAssertions::class);
+uses(TestCase::class, RefreshDatabase::class);
 
 function mailChannel(string $min = 'medium', array $extra = []): NotificationChannel
 {
@@ -266,37 +266,36 @@ beforeEach(function () {
     $this->actingAs(User::factory()->admin()->create());
 });
 
-it('sets the scan frequency per machine from the back-office and clears it', function () {
-    $payload = ['name' => 'web', 'host' => '10.0.0.9', 'port' => 22, 'username' => 'sentinel', 'private_key' => 'K', 'environment' => 'production', 'autonomy_enabled' => false];
+it('sets the scan frequency per machine from the dashboard and clears it', function () {
+    $fill = fn ($component, int $minutes) => $component->set('name', 'web')->set('host', '10.0.0.9')->set('scan_interval_minutes', $minutes)->call('save');
 
-    $this->sharpForm(MachineEntity::class)->store($payload + ['scan_interval_minutes' => 360])->assertSessionHasNoErrors();
+    $fill(Livewire::test(Form::class), 360)->assertHasNoErrors();
     $machine = Machine::firstWhere('name', 'web');
     expect($machine->scan_interval_minutes)->toBe(360);
 
-    $this->sharpForm(MachineEntity::class, $machine->id)->update($payload + ['scan_interval_minutes' => 0])->assertSessionHasNoErrors();
+    $fill(Livewire::test(Form::class, ['machine' => $machine]), 0)->assertHasNoErrors();
     expect($machine->fresh()->scan_interval_minutes)->toBeNull();
 
-    $this->sharpForm(MachineEntity::class, $machine->id)->update($payload + ['scan_interval_minutes' => 5])->assertSessionHasErrors('scan_interval_minutes');
+    $fill(Livewire::test(Form::class, ['machine' => $machine]), 5)->assertHasErrors('scan_interval_minutes');
 });
 
 it('creates a Telegram channel keeping the bot token secret and the stored settings encrypted', function () {
-    $this->sharpForm(NotificationChannelEntity::class)->store([
-        'name' => 'bot', 'type' => 'telegram', 'bot_token' => '123:ABC', 'chat_id' => '4242', 'approver_ids' => '4242',
-        'min_severity' => 'high', 'notify_scans' => true, 'notify_approvals' => true, 'enabled' => true,
-    ])->assertSessionHasNoErrors()->assertRedirect();
+    $form = fn (array $data, ?NotificationChannel $channel = null) => Livewire::test(App\Livewire\Channels\Form::class, $channel ? ['channel' => $channel] : [])
+        ->set($data + ['name' => 'bot', 'type' => 'telegram', 'chat_id' => '4242', 'min_severity' => 'high'])->call('save')->assertHasNoErrors();
+
+    $form(['bot_token' => '123:ABC', 'approver_ids' => '4242']);
 
     $channel = NotificationChannel::firstWhere('name', 'bot');
     expect($channel->setting('bot_token'))->toBe('123:ABC')
         ->and(DB::table('notification_channels')->value('settings'))->not->toContain('123:ABC');
 
-    $this->sharpForm(NotificationChannelEntity::class, $channel->id)->update([
-        'name' => 'bot', 'type' => 'telegram', 'bot_token' => '', 'chat_id' => '4242', 'approver_ids' => '4242, 7',
-        'min_severity' => 'high', 'notify_scans' => true, 'notify_approvals' => true, 'enabled' => true,
-    ])->assertSessionHasNoErrors();
+    // Editing never shows the token back, and leaving it empty keeps it.
+    Livewire::test(App\Livewire\Channels\Form::class, ['channel' => $channel])->assertSet('bot_token', '')->assertDontSee('123:ABC');
+    $form(['bot_token' => '', 'approver_ids' => '4242, 7'], $channel);
 
     expect($channel->fresh()->setting('bot_token'))->toBe('123:ABC')->and($channel->fresh()->approverIds())->toBe(['4242', '7']);
 
-    $this->sharpList(NotificationChannelEntity::class)->get()->assertListData(fn ($d) => $d->count(1)->missing('0.settings')->missing('0.bot_token')->etc());
+    Livewire::test(Index::class)->assertSee('bot')->assertDontSee('123:ABC');
 });
 
 it('uses the scheduled-scan model only for scheduled scans, falling back to the default', function () {

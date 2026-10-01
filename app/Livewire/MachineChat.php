@@ -3,6 +3,7 @@
 namespace App\Livewire;
 
 use App\Ai\ScanRunner;
+use App\Livewire\Concerns\AuthorizesAdmin;
 use App\Models\ChatMessage;
 use App\Models\Machine;
 use App\Support\SafeMarkdown;
@@ -11,13 +12,13 @@ use Illuminate\Support\Facades\RateLimiter;
 use Laravel\Ai\Streaming\Events\StreamEvent;
 use Laravel\Ai\Streaming\Events\TextDelta;
 use Laravel\Ai\Streaming\Events\ToolCall;
-use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
 
-#[Layout('layouts.chat')]
 class MachineChat extends Component
 {
+    use AuthorizesAdmin;
+
     #[Locked]
     public int $machineId;
 

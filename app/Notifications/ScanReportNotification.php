@@ -16,7 +16,7 @@ class ScanReportNotification extends Notification implements ShouldQueue
 {
     use Queueable;
 
-    public function __construct(public AgentRun $run, public Severity $severity) {}
+    public function __construct(public AgentRun $run, public Severity $severity, public bool $urgent = false) {}
 
     public function via(NotificationChannel $notifiable): array
     {
@@ -26,10 +26,11 @@ class ScanReportNotification extends Notification implements ShouldQueue
     private function headline(): string
     {
         $machine = $this->run->machine;
+        $prefix = $this->urgent ? 'URGENT: ' : '';
 
-        return $this->run->status === 'failed'
+        return $prefix.($this->run->status === 'failed'
             ? "Scan failed on {$machine->name}"
-            : sprintf('%s finding on %s', ucfirst($this->severity->value), $machine->name);
+            : sprintf('%s finding on %s', ucfirst($this->severity->value), $machine->name));
     }
 
     private function summary(): string

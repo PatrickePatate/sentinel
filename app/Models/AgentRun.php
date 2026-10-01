@@ -9,11 +9,16 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class AgentRun extends Model
 {
     /** @var list<string> */
-    protected $fillable = ['machine_id', 'parent_run_id', 'provider', 'objective', 'status', 'messages', 'report', 'trigger', 'severity', 'summary', 'progress'];
+    protected $fillable = ['machine_id', 'parent_run_id', 'provider', 'objective', 'status', 'messages', 'report', 'trigger', 'severity', 'summary', 'progress', 'profile'];
 
     protected function casts(): array
     {
         return ['messages' => 'array'];
+    }
+
+    public function profileLabel(): ?string
+    {
+        return $this->profile ? (config("sentinel.scheduling.profiles.{$this->profile}.label") ?? $this->profile) : null;
     }
 
     public function isActive(): bool

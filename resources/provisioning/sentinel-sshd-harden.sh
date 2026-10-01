@@ -52,7 +52,8 @@ chmod 0644 "$dropin"
 
 sshd -t || { restore; echo "sshd rejected the configuration, reverted" >&2; exit 5; }
 
-effective=$(sshd -T 2>/dev/null)
+# OpenSSH before 9.7 prints "without-password" for the value it documents as "prohibit-password".
+effective=$(sshd -T 2>/dev/null | sed 's/^permitrootlogin without-password$/permitrootlogin prohibit-password/')
 if [[ $root_login != keep ]] && ! grep -qx "permitrootlogin $root_login" <<<"$effective"; then
     restore; echo "another sshd setting overrides PermitRootLogin, reverted" >&2; exit 6
 fi

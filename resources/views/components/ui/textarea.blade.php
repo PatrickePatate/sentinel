@@ -1,0 +1,1 @@
+<textarea {{ $attributes->class('flex min-h-20 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/60 disabled:opacity-50') }}>{{ $slot }}</textarea>

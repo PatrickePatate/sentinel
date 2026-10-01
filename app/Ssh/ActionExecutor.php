@@ -10,6 +10,7 @@ use App\Ssh\Actions\RiskLevel;
 use App\Ssh\Gate\GateVerdict;
 use App\Ssh\Gate\RiskGate;
 use App\Ssh\Tools\InvalidToolArguments;
+use App\Support\Realtime;
 use InvalidArgumentException;
 use Spatie\Activitylog\Models\Activity;
 use Throwable;
@@ -52,8 +53,14 @@ class ActionExecutor
             return "REFUSED: {$decision->reason} Do not retry; include it in your report.";
         }
 
-        if ($decision->verdict === GateVerdict::Execute && $this->quotaReached($run)) {
+        if ($decision->verdict === GateVerdict::Execute && $this->quotaReached($machine, $run)) {
             $decision = new Gate\GateDecision(GateVerdict::AskHuman, 'Autonomous action quota reached for this scan.', $decision->details);
+            $context['reason'] = $decision->reason;
+        }
+
+        // Flapping: the same fix again and again means the cause is elsewhere, so stop doing it unattended and tell a human.
+        if ($decision->verdict === GateVerdict::Execute && ($runs = $this->recentRuns($machine, $command)) >= config('sentinel.gate.flap_threshold')) {
+            $decision = new Gate\GateDecision(GateVerdict::AskHuman, "Flapping: this exact action already ran {$runs} times in the last 24 hours, so the cause is probably elsewhere. A human should look at it.", $decision->details);
             $context['reason'] = $decision->reason;
         }
 
@@ -69,6 +76,7 @@ class ActionExecutor
             ]);
             $this->audit->record($machine, $run, 'action_pending', $actionName, $context + ['pending_action_id' => $pending->id]);
             app(Notifier::class)->approvalNeeded($pending);
+            Realtime::push('actions');
 
             return "PENDING_HUMAN_APPROVAL (#{$pending->id}): {$decision->reason} Not executed; mention it in your report.";
         }
@@ -121,6 +129,7 @@ class ActionExecutor
         ]);
         $this->audit->record($machine, $run, 'action_proposed', $actionName, $context + ['pending_action_id' => $pending->id]);
         app(Notifier::class)->approvalNeeded($pending);
+        Realtime::push('actions');
 
         return "PROPOSED (#{$pending->id}): filed for human approval, not executed. List it under proposed fixes in your report.";
     }
@@ -155,6 +164,7 @@ class ActionExecutor
 
         $output = $this->run($machine, $pending->agentRun, $pending->action, $command, ['approved_pending_action_id' => $pending->id] + $context, 'action_approved');
         $pending->update(['status' => str_starts_with($output, 'ERROR') ? 'failed' : 'executed', 'output' => $output, 'decided_at' => now()]);
+        Realtime::push('actions');
 
         return $output;
     }
@@ -165,6 +175,7 @@ class ActionExecutor
         $this->claim($pending, 'rejected');
 
         $this->audit->record($pending->machine, null, 'action_rejected', $pending->action, ['pending_action_id' => $pending->id] + $context);
+        Realtime::push('actions');
     }
 
     /**
@@ -203,7 +214,18 @@ class ActionExecutor
         return $output === '' ? "(no output, exit code {$result->exitCode})" : $output;
     }
 
-    private function quotaReached(?AgentRun $run): bool
+    /** How many times this exact command ran on the machine in the last 24 hours (autonomously or approved). */
+    public function recentRuns(Machine $machine, string $command): int
+    {
+        return Activity::query()
+            ->where('log_name', 'ssh')->whereIn('event', ['action_executed', 'action_approved'])
+            ->where('subject_type', $machine->getMorphClass())->where('subject_id', $machine->getKey())
+            ->where('created_at', '>=', now()->subDay())
+            ->where('properties->command', $command)
+            ->count();
+    }
+
+    private function quotaReached(Machine $machine, ?AgentRun $run): bool
     {
         if ($run === null) {
             return false;
@@ -213,6 +235,6 @@ class ActionExecutor
             ->where('log_name', 'ssh')
             ->where('event', 'action_executed')
             ->where('properties->agent_run_id', $run->id)
-            ->count() >= config('sentinel.gate.max_autonomous_actions_per_run');
+            ->count() >= $machine->gate('max_actions');
     }
 }

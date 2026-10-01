@@ -5,23 +5,18 @@ use App\Ai\LiveReport;
 use App\Ai\ScanRunner;
 use App\Jobs\RunFollowUp;
 use App\Jobs\RunScan;
+use App\Livewire\Machines\Show;
 use App\Livewire\ScanReport;
 use App\Models\AgentRun;
 use App\Models\Machine;
 use App\Models\PendingAction;
 use App\Models\User;
-use App\Sharp\Entities\AgentRunEntity;
-use App\Sharp\Entities\MachineEntity;
-use App\Sharp\Entities\PendingActionEntity;
-use App\Sharp\Machines\ScanMachineCommand;
-use Code16\Sharp\Utils\Links\LinkToShowPage;
-use Code16\Sharp\Utils\Testing\SharpAssertions;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Laravel\Ai\Streaming\Events\TextDelta;
 use Tests\TestCase;
 
-uses(TestCase::class, RefreshDatabase::class, SharpAssertions::class);
+uses(TestCase::class, RefreshDatabase::class);
 
 function runWith(array $attributes = []): AgentRun
 {
@@ -31,56 +26,46 @@ function runWith(array $attributes = []): AgentRun
 it('keeps guests and non-admins away from the scan report', function () {
     $run = runWith(['report' => 'secret findings']);
 
-    $this->get(route('sentinel.scan', $run))->assertRedirect()->assertDontSee('secret findings');
+    $this->get(route('scans.show', $run))->assertRedirect(route('login'))->assertDontSee('secret findings');
 
     $this->actingAs(User::factory()->create());
-    $this->get(route('sentinel.scan', $run))->assertRedirect()->assertDontSee('secret findings');
+    $this->get(route('scans.show', $run))->assertForbidden()->assertDontSee('secret findings');
 });
 
-it('renders the report as safe markdown and can only be framed by the same origin', function () {
+it('renders the report as safe markdown', function () {
     $this->actingAs(User::factory()->admin()->create());
     $run = runWith(['report' => "## Findings\n\n- **root login** enabled\n\n<script>alert(1)</script>\n\n![x](https://evil.test/p.png)", 'summary' => '<b>sum</b>', 'severity' => 'high']);
 
-    $this->get(route('sentinel.scan', $run))
+    $this->get(route('scans.show', $run))
         ->assertOk()
         ->assertSee('Findings')
         ->assertSeeHtml('<strong>root login</strong>')
         ->assertDontSeeHtml('<script>alert(1)</script>')
         ->assertDontSeeHtml('<img')
         ->assertDontSeeHtml('<b>sum</b>')
-        ->assertSee('severity: high')
-        ->assertHeader('Content-Security-Policy', "frame-ancestors 'self'");
+        ->assertSee('High');
 });
 
 it('polls while the scan is active and stops once it is finished', function () {
     $this->actingAs(User::factory()->admin()->create());
 
-    $this->get(route('sentinel.scan', runWith(['status' => 'running', 'report' => 'partial', 'progress' => 'Running disk_usage…'])))
+    $this->get(route('scans.show', runWith(['status' => 'running', 'report' => 'partial', 'progress' => 'Running disk_usage…'])))
         ->assertSeeHtml('wire:poll.750ms')->assertSee('partial')->assertSee('Running disk_usage…');
 
-    $this->get(route('sentinel.scan', runWith(['status' => 'queued', 'report' => null])))
-        ->assertSeeHtml('wire:poll.750ms')->assertSee('Waiting for a worker');
+    $this->get(route('scans.show', runWith(['status' => 'queued', 'report' => null])))
+        ->assertSeeHtml('wire:poll.750ms')->assertSee('Waiting for a queue worker');
 
-    $this->get(route('sentinel.scan', runWith()))->assertDontSeeHtml('wire:poll');
-});
-
-it('embeds the live report in the scan show page instead of dumping raw text', function () {
-    $this->actingAs(User::factory()->admin()->create());
-    $run = runWith(['report' => '<script>alert(1)</script>']);
-
-    $this->sharpShow(AgentRunEntity::class, $run->id)->get()->assertOk()
-        ->assertInertia(fn ($page) => $page->where('show.data.report.text', fn ($html) => str_contains($html, route('sentinel.scan', $run, absolute: false)) && ! str_contains($html, 'alert(1)'))->etc());
+    $this->get(route('scans.show', runWith()))->assertDontSeeHtml('wire:poll.750ms');
 });
 
 it('sends the admin to the scan page after requesting a scan', function () {
     Queue::fake();
     $this->actingAs(User::factory()->admin()->create());
-    $machine = Machine::factory()->create();
+    $machine = Machine::factory()->create(['host_key_fingerprint' => 'SHA256:a']);
 
-    $this->sharpList(MachineEntity::class)
-        ->instanceCommand(ScanMachineCommand::class, $machine->id)
-        ->getForm()->post(['objective' => 'x'])
-        ->assertReturnsLink(LinkToShowPage::make(AgentRunEntity::class, (string) AgentRun::firstOrFail()->id)->renderAsUrl());
+    Livewire\Livewire::test(Show::class, ['machine' => $machine])
+        ->set('objective', 'x')->call('scan')
+        ->assertRedirect(route('scans.show', AgentRun::firstOrFail()));
 });
 
 it('runs the queued scan into the same run and stores the report', function () {
@@ -154,18 +139,30 @@ it('runs a follow-up with the scan report as conversation', function () {
         && collect($prompt->agent->messages())->contains(fn ($m) => $m->content === 'nginx is down'));
 });
 
-it('lists the actions of a scan and its follow-ups on the scan page', function () {
+it('lists the actions of a scan and its follow-ups on the scan page, and lets the admin decide them', function () {
     $this->actingAs(User::factory()->admin()->create());
     $scan = runWith();
     $followUp = app(ScanRunner::class)->queueFollowUp($scan, 'fix it');
     $action = fn (?AgentRun $run, string $command) => PendingAction::create(['machine_id' => $scan->machine_id, 'agent_run_id' => $run?->id, 'action' => 'clean_apt_cache', 'command' => $command, 'risk' => 'low', 'reason' => 'r']);
-    $action($scan, 'from-scan');
+    $mine = $action($scan, 'from-scan');
     $action($followUp, 'from-follow-up');
-    $action(runWith(), 'other-scan');
+    $other = $action(runWith(), 'other-scan');
 
-    $this->sharpList(PendingActionEntity::class)
-        ->withFilter('agent_run', $scan->id)->get()->assertOk()
-        ->assertInertia(fn ($page) => $page->where('entityList.data', fn ($rows) => collect($rows)->pluck('command')->sort()->values()->all() === ['from-follow-up', 'from-scan'])->etc());
+    Livewire\Livewire::test(ScanReport::class, ['run' => $scan])
+        ->assertSee('from-scan')->assertSee('from-follow-up')->assertDontSee('other-scan')
+        ->call('reject', $mine->id);
 
-    $this->sharpShow(AgentRunEntity::class, $scan->id)->get()->assertOk();
+    expect($mine->fresh()->status)->toBe('rejected');
+
+    // An action of another scan cannot be decided from this page.
+    Livewire\Livewire::test(ScanReport::class, ['run' => $scan])->call('reject', $other->id)->assertNotFound();
+});
+
+it('shows the commands the agent ran for a scan as steps', function () {
+    $this->actingAs(User::factory()->admin()->create());
+    $scan = runWith();
+    activity('ssh')->performedOn($scan->machine)->event('ok')->withProperties(['command' => 'df -hT', 'exit_code' => 0, 'agent_run_id' => $scan->id])->log('disk_usage');
+    activity('ssh')->performedOn($scan->machine)->event('ok')->withProperties(['command' => 'free -m', 'agent_run_id' => 999])->log('memory_usage');
+
+    Livewire\Livewire::test(ScanReport::class, ['run' => $scan])->assertSee('disk_usage')->assertSee('df -hT')->assertDontSee('memory_usage');
 });

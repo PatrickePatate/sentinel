@@ -3,8 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\Machine;
-use App\Models\PendingAction;
-use App\Ssh\AuditTrail;
+use App\Ssh\AccessControl;
 use App\Ssh\Provisioning\RevokeScript;
 use Illuminate\Console\Command;
 
@@ -14,24 +13,18 @@ class RevokeMachine extends Command
 
     protected $description = 'Cut Sentinel off a machine: block it locally at once and print the root script that removes access remotely';
 
-    public function handle(RevokeScript $script, AuditTrail $audit): int
+    public function handle(RevokeScript $script, AccessControl $access): int
     {
         $machine = Machine::findOrFail($this->argument('machine'));
 
         if ($this->option('lift')) {
-            $machine->forceFill(['revoked_at' => null])->save();
-            $audit->record($machine, null, 'machine_restored', 'revocation lifted');
+            $access->lift($machine);
             $this->getOutput()->getErrorStyle()->writeln("Revocation lifted for {$machine->name}. Re-run sentinel:provision on the machine.");
 
             return self::SUCCESS;
         }
 
-        $machine->forceFill(['revoked_at' => $machine->revoked_at ?? now(), 'autonomy_enabled' => false])->save();
-
-        $cancelled = PendingAction::where('machine_id', $machine->id)->where('status', 'pending')
-            ->update(['status' => 'rejected', 'decided_at' => now()]);
-
-        $audit->record($machine, null, 'machine_revoked', 'access revoked', ['purge' => (bool) $this->option('purge'), 'pending_cancelled' => $cancelled]);
+        $cancelled = $access->revoke($machine, (bool) $this->option('purge'));
 
         // Status goes to stderr so stdout stays pipeable: php artisan sentinel:revoke 1 | ssh root@host bash
         $this->getOutput()->getErrorStyle()->writeln("Sentinel is now blocked from {$machine->name} ({$cancelled} pending action(s) cancelled). Run the script below as root on the machine to remove access there too.");

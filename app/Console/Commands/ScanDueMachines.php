@@ -18,28 +18,35 @@ class ScanDueMachines extends Command
     {
         $queued = 0;
 
-        Machine::query()
-            ->whereNotNull('scan_interval_minutes')->where('scan_interval_minutes', '>', 0)
-            ->whereNull('revoked_at')->whereNotNull('host_key_fingerprint')
-            ->get()
-            ->each(function (Machine $machine) use (&$queued) {
-                $due = $machine->last_scan_at === null || $machine->last_scan_at->copy()->addMinutes($machine->scan_interval_minutes)->lte(now());
+        foreach (config('sentinel.scheduling.profiles') as $profile => $settings) {
+            $interval = $settings['interval_column'];
+            $last = $settings['last_column'];
 
-                if (! $due || $this->alreadyRunning($machine)) {
-                    return;
-                }
+            Machine::query()
+                ->when($settings['enabled_column'] ?? null, fn ($q, $column) => $q->where($column, true))
+                ->whereNotNull($interval)->where($interval, '>', 0)
+                ->whereNull('revoked_at')->whereNotNull('host_key_fingerprint')
+                ->get()
+                ->each(function (Machine $machine) use (&$queued, $profile, $settings, $interval, $last) {
+                    $lastAt = $machine->{$last};
+                    $due = $lastAt === null || $lastAt->copy()->addMinutes($machine->{$interval})->lte(now());
 
-                // Compare-and-set: two overlapping schedulers cannot both queue the same scan.
-                $claimed = Machine::whereKey($machine->id)
-                    ->where(fn ($q) => $machine->last_scan_at ? $q->where('last_scan_at', $machine->last_scan_at) : $q->whereNull('last_scan_at'))
-                    ->update(['last_scan_at' => now()]);
+                    if (! $due || $this->alreadyRunning($machine)) {
+                        return;
+                    }
 
-                if ($claimed === 1) {
-                    $run = app(ScanRunner::class)->queue($machine, config('sentinel.scheduling.objective'), 'scheduled');
-                    RunScan::dispatch($machine->id, config('sentinel.scheduling.objective'), null, 'scheduled', $run->id);
-                    $queued++;
-                }
-            });
+                    // Compare-and-set: two overlapping schedulers cannot both queue the same scan.
+                    $claimed = Machine::whereKey($machine->id)
+                        ->where(fn ($q) => $lastAt ? $q->where($last, $lastAt) : $q->whereNull($last))
+                        ->update([$last => now()]);
+
+                    if ($claimed === 1) {
+                        $run = app(ScanRunner::class)->queue($machine, $settings['objective'], 'scheduled', $profile);
+                        RunScan::dispatch($machine->id, $settings['objective'], null, 'scheduled', $run->id, $profile);
+                        $queued++;
+                    }
+                });
+        }
 
         $this->info("{$queued} scan(s) queued.");
 

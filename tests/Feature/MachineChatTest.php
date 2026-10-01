@@ -7,36 +7,27 @@ use App\Models\AgentRun;
 use App\Models\ChatMessage;
 use App\Models\Machine;
 use App\Models\User;
-use App\Sharp\Entities\MachineEntity;
 use App\Support\SafeMarkdown;
-use Code16\Sharp\Utils\Testing\SharpAssertions;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Route;
 use Laravel\Ai\Streaming\Events\TextDelta;
 use Livewire\Livewire;
 use Tests\TestCase;
 
-uses(TestCase::class, RefreshDatabase::class, SharpAssertions::class);
+uses(TestCase::class, RefreshDatabase::class);
 
-it('protects the chat page and the livewire endpoint with the Sharp auth middleware', function () {
-    foreach (['sentinel.chat', 'sentinel.livewire.update'] as $name) {
-        expect(Route::getRoutes()->getByName($name)->gatherMiddleware())->toContain('sharp_auth', 'sharp_common');
-    }
-});
-
-it('does not serve the chat to guests', function () {
+it('does not serve the dashboard or its Livewire endpoint to guests', function () {
     $machine = Machine::factory()->create();
 
-    $this->get(route('sentinel.chat', $machine))->assertRedirect()->assertDontSee($machine->name);
-    $this->postJson(route('sentinel.livewire.update'), ['components' => []])->assertRedirect();
+    $this->get(route('machines.show', $machine))->assertRedirect(route('login'))->assertDontSee($machine->name);
+    Livewire::test(MachineChat::class, ['machine' => $machine])->assertForbidden();
 });
 
-it('keeps non-admin users out of the chat, its Livewire endpoint and the back-office', function () {
+it('keeps non-admin users out of the dashboard and refuses their Livewire calls', function () {
     $machine = Machine::factory()->create();
     $this->actingAs(User::factory()->create());
 
-    $this->get(route('sentinel.chat', $machine))->assertRedirect()->assertDontSee($machine->name);
-    $this->postJson(route('sentinel.livewire.update'), ['components' => []])->assertRedirect();
+    $this->get(route('machines.show', $machine))->assertForbidden()->assertDontSee($machine->name);
+    Livewire::test(MachineChat::class, ['machine' => $machine])->assertForbidden();
 });
 
 it('never lets is_admin be mass assigned', function () {
@@ -45,21 +36,11 @@ it('never lets is_admin be mass assigned', function () {
     expect($user->fresh()->is_admin)->toBeFalse();
 });
 
-it('can only be framed by the same origin', function () {
-    $this->actingAs(User::factory()->admin()->create());
-
-    $this->get(route('sentinel.chat', Machine::factory()->create()))
-        ->assertOk()
-        ->assertHeader('Content-Security-Policy', "frame-ancestors 'self'")
-        ->assertHeader('X-Frame-Options', 'SAMEORIGIN');
-});
-
-it('is embedded as an iframe in the machine show page', function () {
+it('embeds the chat in a tab of the machine page', function () {
     $this->actingAs(User::factory()->admin()->create());
     $machine = Machine::factory()->create();
 
-    $this->sharpShow(MachineEntity::class, $machine->id)->get()
-        ->assertShowData(fn ($json) => $json->where('chat', fn ($html) => str_contains($html, '<iframe src="/chat/'.$machine->id.'"'))->etc());
+    $this->get(route('machines.show', ['machine' => $machine, 'tab' => 'chat']))->assertOk()->assertSee('Chat with the agent');
 });
 
 it('answers through the agent and keeps the conversation per user', function () {

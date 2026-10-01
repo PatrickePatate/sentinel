@@ -5,6 +5,7 @@ namespace App\Ai;
 use App\Ai\Agents\SysadminAgent;
 use App\Models\AgentRun;
 use App\Models\Machine;
+use App\Support\Realtime;
 use Closure;
 use Laravel\Ai\Streaming\Events\StreamEvent;
 use Throwable;
@@ -12,20 +13,21 @@ use Throwable;
 class ScanRunner
 {
     /** Creates the run up front so the UI can point at it while the job is still waiting for a worker. */
-    public function queue(Machine $machine, string $objective, string $trigger = 'manual'): AgentRun
+    public function queue(Machine $machine, string $objective, string $trigger = 'manual', string $profile = 'audit'): AgentRun
     {
-        return AgentRun::create([
+        return tap(AgentRun::create([
             'machine_id' => $machine->id,
             'provider' => config('sentinel.agent.provider'),
             'objective' => $objective,
             'trigger' => $trigger,
+            'profile' => $profile,
             'status' => 'queued',
-        ]);
+        ]), fn (AgentRun $run) => Realtime::push('run', $run->id));
     }
 
-    public function run(Machine $machine, string $objective, ?string $provider = null, ?string $model = null, string $trigger = 'manual', ?AgentRun $run = null): AgentRun
+    public function run(Machine $machine, string $objective, ?string $provider = null, ?string $model = null, string $trigger = 'manual', ?AgentRun $run = null, string $profile = 'audit'): AgentRun
     {
-        return $this->execute($machine, $objective, $this->scanPrompt($machine, $objective), [], $provider, $model, trigger: $trigger, scan: true, run: $run);
+        return $this->execute($machine, $objective, $this->scanPrompt($machine, $objective), [], $provider, $model, trigger: $trigger, scan: true, run: $run, profile: $profile);
     }
 
     /** Queues a follow-up turn on a finished scan ("fix what you found"), threaded under it. */
@@ -81,7 +83,7 @@ class ScanRunner
     }
 
     /** @param list<array{role: string, content: string}> $history */
-    private function execute(Machine $machine, string $objective, string $prompt, array $history, ?string $provider = null, ?string $model = null, ?Closure $onStream = null, string $trigger = 'chat', bool $scan = false, ?AgentRun $run = null, bool $live = false): AgentRun
+    private function execute(Machine $machine, string $objective, string $prompt, array $history, ?string $provider = null, ?string $model = null, ?Closure $onStream = null, string $trigger = 'chat', bool $scan = false, ?AgentRun $run = null, bool $live = false, ?string $profile = null): AgentRun
     {
         if ($trigger === 'scheduled') {
             // A scheduled-only model is only used together with its own provider: a model name means nothing on another one.
@@ -95,12 +97,14 @@ class ScanRunner
 
         if ($run) {
             $run->update(['provider' => $provider, 'status' => 'running']);
+            Realtime::push('run', $run->id);
         } else {
             $run = AgentRun::create([
                 'machine_id' => $machine->id,
                 'provider' => $provider,
                 'objective' => $objective,
                 'trigger' => $trigger,
+                'profile' => $profile,
                 'status' => 'running',
             ]);
         }
@@ -130,6 +134,8 @@ class ScanRunner
         } catch (Throwable $e) {
             $run->update(['status' => 'failed', 'report' => $e->getMessage(), 'progress' => null]);
         }
+
+        Realtime::push('run', $run->id);
 
         return $run;
     }

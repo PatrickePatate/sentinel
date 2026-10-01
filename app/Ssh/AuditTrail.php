@@ -4,6 +4,7 @@ namespace App\Ssh;
 
 use App\Models\AgentRun;
 use App\Models\Machine;
+use App\Support\Realtime;
 
 class AuditTrail
 {
@@ -20,5 +21,7 @@ class AuditTrail
             ->event($event)
             ->withProperties($properties + ['agent_run_id' => $run?->id])
             ->log($description);
+
+        Realtime::push('audit');
     }
 }
