@@ -289,3 +289,38 @@ it('builds the SSH hardening and security package commands from validated values
         ->and(fn () => $catalog->get('harden_ssh')->command(['permit_root_login' => 'keep', 'password_authentication' => 'keep']))->toThrow(InvalidToolArguments::class)
         ->and(fn () => $catalog->get('install_security_package')->command(['package' => 'nmap']))->toThrow(InvalidToolArguments::class);
 });
+
+it('lets an administrator enable autonomy for a single scan without touching the machine', function () {
+    Classification::fake(jev(0.01, 0.99, 0.97, 'execute', 0.99));
+    $transport = recordingTransport();
+    $machine = Machine::factory()->create(['autonomy_enabled' => false]);
+    $run = AgentRun::create(['machine_id' => $machine->id, 'provider' => 'test', 'objective' => 'x', 'status' => 'running', 'allow_actions' => true]);
+
+    $out = actions($transport)->request($machine, 'clean_apt_cache', [], $run, 'free disk space');
+
+    expect($out)->toBe('done')->and((bool) $machine->fresh()->autonomy_enabled)->toBeFalse();
+});
+
+it('still holds actions for a human when neither the machine nor the scan allows autonomy', function () {
+    Classification::fake(jev(0.01, 0.99, 0.97, 'execute', 0.99));
+    $machine = Machine::factory()->create(['autonomy_enabled' => false]);
+    $run = AgentRun::create(['machine_id' => $machine->id, 'provider' => 'test', 'objective' => 'x', 'status' => 'running']);
+
+    expect(actions(recordingTransport())->request($machine, 'clean_apt_cache', [], $run, 'free disk space'))->toStartWith('PENDING_HUMAN_APPROVAL');
+});
+
+it('lets moderate actions through the classifier only when the machine allows them', function () {
+    config(['sentinel.actions.restartable_services' => ['nginx']]);
+    Classification::fake(jev(0.01, 0.99, 0.97, 'execute', 0.99));
+    $transport = recordingTransport();
+    $machine = Machine::factory()->create(['autonomy_enabled' => true, 'autonomy_medium' => true]);
+
+    expect(actions($transport)->request($machine, 'restart_service', ['service' => 'nginx'], null, 'x'))->toBe('done');
+});
+
+it('ignores the moderate setting when autonomy itself is off', function () {
+    config(['sentinel.actions.restartable_services' => ['nginx']]);
+    $machine = Machine::factory()->create(['autonomy_enabled' => false, 'autonomy_medium' => true]);
+
+    expect(actions(recordingTransport())->request($machine, 'restart_service', ['service' => 'nginx'], null, 'x'))->toStartWith('PENDING_HUMAN_APPROVAL');
+});

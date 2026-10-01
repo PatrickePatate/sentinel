@@ -68,6 +68,23 @@ it('sends the admin to the scan page after requesting a scan', function () {
         ->assertRedirect(route('scans.show', AgentRun::firstOrFail()));
 });
 
+it('stores the per-scan permission to act on low-risk issues', function () {
+    Queue::fake();
+    $this->actingAs(User::factory()->admin()->create());
+    $machine = Machine::factory()->create(['host_key_fingerprint' => 'SHA256:a']);
+
+    Livewire\Livewire::test(Show::class, ['machine' => $machine])->set('objective', 'x')->set('allowActions', true)->call('scan');
+
+    expect(AgentRun::firstOrFail()->allow_actions)->toBeTrue();
+});
+
+it('enables actions on a scan by default when the machine has autonomy', function () {
+    $machine = Machine::factory()->create(['autonomy_enabled' => true]);
+
+    expect(app(ScanRunner::class)->queue($machine, 'audit')->allow_actions)->toBeTrue()
+        ->and(app(ScanRunner::class)->queue(Machine::factory()->create(), 'audit')->allow_actions)->toBeFalse();
+});
+
 it('runs the queued scan into the same run and stores the report', function () {
     SysadminAgent::fake(['## All good']);
     $machine = Machine::factory()->create();

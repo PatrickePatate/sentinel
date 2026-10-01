@@ -2,6 +2,7 @@
 
 namespace App\Ssh\Gate;
 
+use App\Models\AgentRun;
 use App\Models\Machine;
 use App\Ssh\Actions\ActionTool;
 use App\Ssh\Actions\HasSafeguards;
@@ -18,7 +19,7 @@ use Throwable;
  */
 class RiskGate
 {
-    public function assess(Machine $machine, ActionTool $action, string $command, string $objective): GateDecision
+    public function assess(Machine $machine, ActionTool $action, string $command, string $objective, ?AgentRun $run = null): GateDecision
     {
         if ($action->risk() === RiskLevel::High) {
             return new GateDecision(GateVerdict::Refuse, 'High-risk actions are never executed by the agent.');
@@ -29,12 +30,13 @@ class RiskGate
             return new GateDecision(GateVerdict::Execute, 'Allowed by an administrator for this machine.');
         }
 
-        if ($action->risk() === RiskLevel::Medium) {
-            return new GateDecision(GateVerdict::AskHuman, 'Medium-risk actions always require human approval.');
+        // Autonomy comes from the machine settings, or from an administrator switching it on for this one scan.
+        if (! $machine->autonomy_enabled && ! $run?->allow_actions) {
+            return new GateDecision(GateVerdict::AskHuman, 'Autonomy is disabled for this machine and was not enabled for this scan.');
         }
 
-        if (! $machine->autonomy_enabled) {
-            return new GateDecision(GateVerdict::AskHuman, 'Autonomy is disabled for this machine.');
+        if ($action->risk() === RiskLevel::Medium && ! $machine->autonomy_medium) {
+            return new GateDecision(GateVerdict::AskHuman, 'Medium-risk actions require human approval on this machine.');
         }
 
         try {

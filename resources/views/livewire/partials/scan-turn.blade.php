@@ -1,8 +1,9 @@
 <x-ui.card>
     <div class="mb-4 flex flex-wrap items-center gap-2">
+        <x-ui.agent-avatar :provider="$turn->provider" :model="$turn->model" />
         <x-ui.status-badge :status="$turn->status" />
         @if ($turn->severity)<x-ui.status-badge :status="$turn->severity" />@endif
-        @if ($turn->progress)<span class="text-xs text-muted-foreground">{{ $turn->progress }}</span>@endif
+        @if ($turn->progress)<span data-live-status wire:key="progress-{{ md5($turn->progress) }}" class="text-xs text-muted-foreground">{{ $turn->progress }}</span>@endif
         <span class="ml-auto text-xs text-muted-foreground">{{ $isScan ? $turn->objective : '' }}</span>
     </div>
     @if ($turn->summary)<p class="mb-3 font-semibold">{{ $turn->summary }}</p>@endif

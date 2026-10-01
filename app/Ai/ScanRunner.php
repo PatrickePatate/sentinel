@@ -13,7 +13,7 @@ use Throwable;
 class ScanRunner
 {
     /** Creates the run up front so the UI can point at it while the job is still waiting for a worker. */
-    public function queue(Machine $machine, string $objective, string $trigger = 'manual', string $profile = 'audit'): AgentRun
+    public function queue(Machine $machine, string $objective, string $trigger = 'manual', string $profile = 'audit', bool $allowActions = false): AgentRun
     {
         return tap(AgentRun::create([
             'machine_id' => $machine->id,
@@ -21,6 +21,7 @@ class ScanRunner
             'objective' => $objective,
             'trigger' => $trigger,
             'profile' => $profile,
+            'allow_actions' => $allowActions || $machine->autonomy_enabled,
             'status' => 'queued',
         ]), fn (AgentRun $run) => Realtime::push('run', $run->id));
     }
@@ -96,12 +97,13 @@ class ScanRunner
         $model ??= config('sentinel.agent.model');
 
         if ($run) {
-            $run->update(['provider' => $provider, 'status' => 'running']);
+            $run->update(['provider' => $provider, 'model' => $model, 'status' => 'running']);
             Realtime::push('run', $run->id);
         } else {
             $run = AgentRun::create([
                 'machine_id' => $machine->id,
                 'provider' => $provider,
+                'model' => $model,
                 'objective' => $objective,
                 'trigger' => $trigger,
                 'profile' => $profile,

@@ -8,7 +8,11 @@
         <div class="flex-1 space-y-5 overflow-y-auto p-5" x-data="follow">
             @forelse ($messages as $chatMessage)
                 <div wire:key="m{{ $chatMessage->id }}" @class(['flex gap-3', 'flex-row-reverse' => $chatMessage->role === 'user'])>
-                    <span @class(['flex size-8 shrink-0 items-center justify-center rounded-full', 'bg-primary text-primary-foreground' => $chatMessage->role !== 'user', 'bg-muted text-muted-foreground' => $chatMessage->role === 'user'])>@svg($chatMessage->role === 'user' ? 'lucide-user' : 'lucide-bot', 'size-4')</span>
+                    @if ($chatMessage->role === 'user')
+                        <span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">@svg('lucide-user', 'size-4')</span>
+                    @else
+                        <x-ui.agent-avatar :provider="config('sentinel.agent.provider')" :model="config('sentinel.agent.model')" />
+                    @endif
                     @if ($chatMessage->role === 'user')
                         <div class="max-w-[85%] whitespace-pre-wrap break-words rounded-xl bg-primary px-4 py-2.5 text-sm text-primary-foreground">{{ $chatMessage->content }}</div>
                     @else
@@ -30,7 +34,7 @@
 
             <div wire:loading.flex wire:target="send" class="hidden flex-col gap-5">
                 <div class="flex flex-row-reverse gap-3"><span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted">@svg('lucide-user', 'size-4')</span><div class="max-w-[85%] whitespace-pre-wrap break-words rounded-xl bg-primary px-4 py-2.5 text-sm text-primary-foreground" wire:stream="question"></div></div>
-                <div class="flex gap-3"><span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">@svg('lucide-bot', 'size-4')</span>
+                <div class="flex gap-3"><x-ui.agent-avatar :provider="config('sentinel.agent.provider')" :model="config('sentinel.agent.model')" />
                     <div class="md max-w-[85%] rounded-xl border bg-card px-4 py-2.5 shadow-xs">
                         <div wire:stream="answer"></div>
                         <span class="typing [[wire\:stream=answer]:not(:empty)+&]:hidden"><i></i><i></i><i></i></span>

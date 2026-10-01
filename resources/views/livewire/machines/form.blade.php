@@ -32,7 +32,8 @@
                         </div>
                     @endif
                 </div>
-                <x-ui.switch wire:model="autonomy_enabled" label="Let the agent run low-risk corrective actions on its own" description="Only after a second classifier model agrees. Medium risk always waits for you; high risk is never run." />
+                <x-ui.switch wire:model="autonomy_enabled" label="Let the agent run low-risk corrective actions on its own" description="Only after a second classifier model agrees. High risk is never run." />
+                @if ($autonomy_enabled)<x-ui.switch wire:model="autonomy_medium" label="Also allow moderate-risk actions" description="Moderate actions (e.g. restarting a service) go through the same classifier checks instead of always waiting for you. Off by default." class="ml-12" />@endif
                 <details class="rounded-md border p-4" @if (filled($gate_max_destructive) || filled($gate_min_reversible) || filled($gate_max_actions)) open @endif>
                     <summary class="cursor-pointer text-sm font-medium">Risk gate tuning for this machine</summary>
                     <p class="mt-2 text-xs text-muted-foreground">Leave empty to use the global defaults ({{ config('sentinel.gate.max_destructive') }} / {{ config('sentinel.gate.min_reversible') }} / {{ config('sentinel.gate.max_autonomous_actions_per_run') }}). Lower "destructive" and higher "reversible" make the gate stricter. The limits are bounded: this cannot switch the gate off.</p>

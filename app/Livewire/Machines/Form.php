@@ -44,12 +44,15 @@ class Form extends Component
 
     public bool $autonomy_enabled = false;
 
+    public bool $autonomy_medium = false;
+
     public function mount(?Machine $machine = null): void
     {
         if ($machine?->exists) {
             $this->machineId = $machine->id;
             $this->fill($machine->only(['name', 'host', 'port', 'environment']));
             $this->autonomy_enabled = (bool) $machine->autonomy_enabled;
+            $this->autonomy_medium = (bool) $machine->autonomy_medium;
             $this->scan_interval_minutes = (int) $machine->scan_interval_minutes;
             $this->webserver_enabled = (bool) $machine->webserver_enabled;
             $this->webserver_interval_minutes = (int) $machine->webserver_interval_minutes;
@@ -75,6 +78,7 @@ class Form extends Component
             'port' => ['required', 'integer', 'between:1,65535'],
             'environment' => ['required', 'in:production,staging'],
             'autonomy_enabled' => ['boolean'],
+            'autonomy_medium' => ['boolean'],
             'scan_interval_minutes' => ['nullable', 'integer', Rule::in(array_keys(Machine::scanProfiles()['audit']['frequencies']))],
             'webserver_enabled' => ['boolean'],
             'webserver_full_check_hours' => ['required', 'integer', Rule::in(array_keys(config('sentinel.scheduling.precheck.full_check_choices')))],
@@ -85,6 +89,9 @@ class Form extends Component
             'gate_min_reversible' => ['nullable', 'numeric', 'between:0.5,1'],
             'gate_max_actions' => ['nullable', 'integer', 'between:0,10'],
         ]);
+
+        // Moderate actions only make sense on top of autonomy itself.
+        $data['autonomy_medium'] = $data['autonomy_enabled'] && $data['autonomy_medium'];
 
         $machine = $this->machineId ? Machine::findOrFail($this->machineId) : new Machine;
         $hostChanged = $machine->exists && ($machine->host !== $data['host'] || $machine->port !== (int) $data['port']);

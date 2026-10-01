@@ -18,7 +18,7 @@ class Machine extends Model
     use HasFactory;
 
     /** @var list<string> */
-    protected $fillable = ['name', 'host', 'port', 'username', 'private_key', 'passphrase', 'host_key_fingerprint', 'environment', 'autonomy_enabled', 'scan_interval_minutes', 'webserver_interval_minutes', 'webserver_enabled', 'webserver_full_check_hours', 'memory', 'gate_max_destructive', 'gate_min_reversible', 'gate_max_actions'];
+    protected $fillable = ['name', 'host', 'port', 'username', 'private_key', 'passphrase', 'host_key_fingerprint', 'environment', 'autonomy_enabled', 'autonomy_medium', 'scan_interval_minutes', 'webserver_interval_minutes', 'webserver_enabled', 'webserver_full_check_hours', 'memory', 'gate_max_destructive', 'gate_min_reversible', 'gate_max_actions'];
 
     protected function casts(): array
     {
@@ -35,6 +35,8 @@ class Machine extends Model
             'host_keys_reported' => 'array',
             'trusted_actions' => 'array',
             'webserver_enabled' => 'boolean',
+            'autonomy_enabled' => 'boolean',
+            'autonomy_medium' => 'boolean',
         ];
     }
 

@@ -9,11 +9,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class AgentRun extends Model
 {
     /** @var list<string> */
-    protected $fillable = ['machine_id', 'parent_run_id', 'provider', 'objective', 'status', 'messages', 'report', 'trigger', 'severity', 'summary', 'progress', 'profile'];
+    protected $fillable = ['machine_id', 'parent_run_id', 'provider', 'objective', 'status', 'messages', 'report', 'trigger', 'severity', 'summary', 'progress', 'profile', 'allow_actions', 'model'];
 
     protected function casts(): array
     {
-        return ['messages' => 'array'];
+        return ['messages' => 'array', 'allow_actions' => 'boolean'];
     }
 
     public function profileLabel(): ?string

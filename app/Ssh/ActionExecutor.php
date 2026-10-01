@@ -44,7 +44,7 @@ class ActionExecutor
             return 'ERROR: '.$e->getMessage();
         }
 
-        $decision = $this->gate->assess($machine, $action, $command, $objective);
+        $decision = $this->gate->assess($machine, $action, $command, $objective, $run);
         $context = ['action' => $actionName, 'arguments' => $arguments, 'command' => $command, 'risk' => $action->risk()->value, 'reason' => $decision->reason, 'gate' => $decision->details];
 
         if ($decision->verdict === GateVerdict::Refuse) {
