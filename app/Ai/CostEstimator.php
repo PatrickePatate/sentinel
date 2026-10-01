@@ -12,7 +12,8 @@ class CostEstimator
     /** @return float|null USD, or null when the model has no configured rate. */
     public function estimate(?string $model, TextUsage $usage): ?float
     {
-        $rates = $model ? config("sentinel.pricing.{$model}") : null;
+        // Rates set by hand win over the ones the agent looked up.
+        $rates = $model ? (config("sentinel.pricing.{$model}") ?: app(PricingFetcher::class)->stored()[$model] ?? null) : null;
 
         if (! $rates) {
             return null;

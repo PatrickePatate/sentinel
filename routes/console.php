@@ -20,3 +20,6 @@ Schedule::call(fn () => PendingAction::where('status', 'running')->where('update
 
 // Plain-code checks that found nothing are not worth keeping for long.
 Schedule::call(fn () => AgentRun::where('provider', 'precheck')->where('created_at', '<', now()->subDays(3))->delete())->daily()->name('prune-prechecks');
+
+// Prices change rarely: a weekly look keeps the run cost estimates honest.
+Schedule::command('sentinel:pricing')->weekly()->onOneServer();
