@@ -87,10 +87,12 @@ SENTINEL_BUNDLE
     sudo -l -U {$user}
 
     # 6. Host keys: shown here, and reported to Sentinel over TLS so it can pin the right one without copy-paste
-    local fingerprints="" pub
+    # A leftover key this OpenSSH no longer reads (DSA on recent releases) cannot be offered by sshd anyway: skip it.
+    local fingerprints="" pub fp
     for pub in /etc/ssh/ssh_host_*_key.pub; do
         [[ -f "\$pub" ]] || continue
-        fingerprints+="\$(ssh-keygen -lf "\$pub" | awk '{print \$2}')"\$'\\n'
+        fp=\$(ssh-keygen -lf "\$pub" 2>/dev/null | awk '{print \$2}') || fp=
+        if [[ -n "\$fp" ]]; then fingerprints+="\$fp"\$'\\n'; fi
     done
     echo "Host key fingerprints of this machine:"
     printf '%s' "\$fingerprints" | sed 's/^/  /'
