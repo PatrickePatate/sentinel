@@ -26,9 +26,27 @@ class Notifier
         // A scheduled web server check that leaves a component down reaches every scan channel, whatever its minimum severity.
         $urgent = $run->profile === 'webserver' && in_array($run->trigger, ['scheduled', 'site_down'], true) && $severity->atLeast(Severity::High);
 
+        if (! $failed && ! $urgent && $this->nothingChanged($run, $severity)) {
+            return;
+        }
+
         $this->dispatch($run, fn () => NotificationChannel::where('enabled', true)->where('notify_scans', true)->get()
             ->filter(fn (NotificationChannel $c) => $urgent || $severity->atLeast($c->minSeverity())),
             new ScanReportNotification($run, $severity, $urgent));
+    }
+
+    /**
+     * A scan that only confirms what earlier scans already reported is not worth a message: nothing new, nothing worse.
+     * High and critical verdicts are always sent, so an ongoing serious problem keeps being reported.
+     */
+    private function nothingChanged(AgentRun $run, Severity $severity): bool
+    {
+        $diff = $run->findings_diff;
+
+        return config('sentinel.notifications.only_changes', true)
+            && is_array($diff) && $diff['ongoing'] !== []
+            && $diff['new'] === [] && $diff['escalated'] === []
+            && ! $severity->atLeast(Severity::High);
     }
 
     /** Tells every channel that takes scan notifications. */

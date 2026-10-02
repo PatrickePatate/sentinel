@@ -1,12 +1,6 @@
 parameters:
 	ignoreErrors:
 		-
-			message: '#^Yield can be used only with these return types\: Generator, Iterator, Traversable, iterable\.$#'
-			identifier: generator.returnType
-			count: 6
-			path: app/Ai/Agents/SysadminAgent.php
-
-		-
 			message: '#^Strict comparison using \!\=\= between non\-empty\-list\<string\> and array\{\} will always evaluate to true\.$#'
 			identifier: notIdentical.alwaysTrue
 			count: 1

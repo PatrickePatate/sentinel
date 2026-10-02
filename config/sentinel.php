@@ -117,6 +117,11 @@ TXT,
     //   'claude-sonnet-5-5' => ['input' => 0.0, 'output' => 0.0, 'cache_read' => 0.0, 'cache_write' => 0.0],
     'pricing' => [],
 
+    'notifications' => [
+        // Skip scan notifications that only repeat known findings (nothing new or worse, verdict below high).
+        'only_changes' => (bool) env('SENTINEL_NOTIFY_ONLY_CHANGES', true),
+    ],
+
     'gate' => [
         'provider' => env('SENTINEL_GATE_PROVIDER', 'openrouter'),
         'model' => env('SENTINEL_GATE_MODEL') ?: null,

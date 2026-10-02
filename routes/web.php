@@ -7,6 +7,7 @@ use App\Livewire\AuditLog;
 use App\Livewire\Auth\Login;
 use App\Livewire\Channels;
 use App\Livewire\Dashboard;
+use App\Livewire\Findings;
 use App\Livewire\Machines;
 use App\Livewire\ScanReport;
 use App\Livewire\Scans;
@@ -50,6 +51,7 @@ Route::middleware(['auth', 'can:admin'])->group(function () {
     Route::get('/scans', Scans\Index::class)->name('scans.index');
     Route::get('/scans/{run}', ScanReport::class)->name('scans.show');
 
+    Route::get('/issues', Findings\Index::class)->name('findings.index');
     Route::get('/actions', Actions\Index::class)->name('actions.index');
 
     Route::get('/channels', Channels\Index::class)->name('channels.index');

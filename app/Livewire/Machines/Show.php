@@ -180,6 +180,7 @@ class Show extends Component
             'machine' => $machine,
             'suggestions' => MemorySuggestion::where('machine_id', $machine->id)->where('status', 'pending')->latest('id')->get(),
             'sites' => $machine->siteChecks()->orderBy('url')->get(),
+            'openFindings' => $machine->findings()->unresolved()->get(['id', 'severity']),
             'disk' => $machine->diskTrend(),
             'client' => $updater->lastKnown($machine),
             'runs' => AgentRun::where('machine_id', $machine->id)->whereNull('parent_run_id')->latest('id')->limit(15)->get(),

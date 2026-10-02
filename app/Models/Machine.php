@@ -165,6 +165,12 @@ class Machine extends Model
         return $this->hasMany(MemorySuggestion::class);
     }
 
+    /** @return HasMany<Finding, $this> */
+    public function findings(): HasMany
+    {
+        return $this->hasMany(Finding::class);
+    }
+
     public function agentRuns(): HasMany
     {
         return $this->hasMany(AgentRun::class);

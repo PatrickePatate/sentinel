@@ -30,6 +30,7 @@
                         <div><dt class="text-muted-foreground">Autonomous {{ strtolower($profile['label']) }}</dt><dd>{{ $machine->scanInterval($key) ? ($profile['frequencies'][$machine->scanInterval($key)] ?? 'custom').($last ? ', last queued '.$last->diffForHumans() : ', not run yet') : 'Manual only' }}</dd></div>
                     @endforeach
                     <div><dt class="text-muted-foreground">Web server analysis</dt><dd>@if ($machine->webserver_enabled)On, AI check {{ $machine->fullCheckHours() ? 'every '.$machine->fullCheckHours().'h when healthy' : 'only when the quick check finds a problem' }} @else Off: <a class="underline" href="{{ route('machines.edit', $machine) }}" wire:navigate>enable it</a> @endif</dd></div>
+                    <div><dt class="text-muted-foreground">Open issues</dt><dd>@if ($openFindings->isEmpty())None @else<a class="underline" href="{{ route('findings.index', ['machine' => $machine->id]) }}" wire:navigate>{{ $openFindings->count() }}</a>, worst {{ $openFindings->sortByDesc(fn ($f) => $f->severityLevel()->rank())->first()->severity }}@endif</dd></div>
                     <div><dt class="text-muted-foreground">Autonomous low-risk actions</dt><dd>{{ $machine->isRevoked() ? 'Revoked' : ($machine->autonomy_enabled ? 'Enabled' : 'Off') }}</dd></div>
                 </dl>
                 <div class="mt-5 border-t pt-4 text-sm">

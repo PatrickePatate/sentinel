@@ -32,6 +32,24 @@
         </div>
 
         <div class="space-y-6">
+            @if ($run->findings_diff !== null)
+                <x-ui.card title="Changes since the last scan" flush>
+                    @php($labels = ['new' => ['New', 'info'], 'escalated' => ['Worse', 'warning'], 'resolved' => ['Resolved', 'success'], 'ongoing' => ['Still open', 'secondary']])
+                    @if (collect($changes)->flatten()->isEmpty())
+                        <x-ui.empty icon="lucide-shield-check" title="No issue" description="This scan reported no problem, and none was open before." />
+                    @endif
+                    @foreach ($changes as $kind => $findings)
+                        @foreach ($findings as $finding)
+                            <div wire:key="c{{ $finding->id }}" class="flex items-start justify-between gap-3 border-b px-6 py-3 last:border-0">
+                                <div class="min-w-0"><p class="text-sm font-medium">{{ $finding->title }}</p><p class="truncate font-mono text-xs text-muted-foreground">{{ $finding->key }}</p></div>
+                                <div class="flex shrink-0 gap-1"><x-ui.badge :variant="$labels[$kind][1]">{{ $labels[$kind][0] }}</x-ui.badge><x-ui.status-badge :status="$finding->severity" /></div>
+                            </div>
+                        @endforeach
+                    @endforeach
+                    <x-slot:footer><a class="text-xs underline" href="{{ route('findings.index', ['machine' => $run->machine_id]) }}" wire:navigate>All issues on this machine</a></x-slot:footer>
+                </x-ui.card>
+            @endif
+
             @php($actions = $run->pendingActions->concat($run->followUps->flatMap->pendingActions)->sortByDesc('id'))
             @if ($actions->isNotEmpty())
                 <x-ui.card title="Actions from this scan" flush>

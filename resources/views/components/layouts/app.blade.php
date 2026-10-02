@@ -5,6 +5,7 @@
         ['Machines', 'machines.index', 'lucide-server', 'machines*'],
         ['Sites', 'sites.index', 'lucide-globe', 'sites*'],
         ['Scans', 'scans.index', 'lucide-scan-search', 'scans*'],
+        ['Issues', 'findings.index', 'lucide-alert-triangle', 'findings*'],
         ['Pending actions', 'actions.index', 'lucide-hand', 'actions*'],
         ['Notifications', 'channels.index', 'lucide-bell', 'channels*'],
         ['Audit log', 'audit', 'lucide-clipboard-list', 'audit'],
