@@ -2,7 +2,7 @@
 
 namespace App\Livewire;
 
-use App\Livewire\Concerns\AuthorizesAdmin;
+use App\Livewire\Concerns\AuthorizesAccess;
 use App\Livewire\Concerns\ListensToRealtime;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -13,7 +13,7 @@ use Spatie\Activitylog\Models\Activity;
 #[Layout('components.layouts.app', ['title' => 'Audit log'])]
 class AuditLog extends Component
 {
-    use AuthorizesAdmin, ListensToRealtime, WithPagination;
+    use AuthorizesAccess, ListensToRealtime, WithPagination;
 
     #[Url(as: 'q')]
     public string $search = '';

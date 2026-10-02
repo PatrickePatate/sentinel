@@ -16,7 +16,7 @@
                 <div wire:key="a{{ $followUp->id }}">@include('livewire.partials.scan-turn', ['turn' => $followUp, 'isScan' => false])</div>
             @endforeach
 
-            @unless ($active)
+            @if (! $active && auth()->user()->can('approve'))
                 <x-ui.card>
                     <form wire:submit="ask" class="flex gap-2">
                         <x-ui.input wire:model="message" wire:loading.attr="disabled" placeholder="Ask the agent to act on this scan…" maxlength="2000" autocomplete="off" />
@@ -28,7 +28,7 @@
                         <p class="text-xs text-muted-foreground">Actions are listed on this page and wait for approval unless the risk gate allows them.</p>
                     </div>
                 </x-ui.card>
-            @endunless
+            @endif
         </div>
 
         <div class="space-y-6">
@@ -58,7 +58,7 @@
                             <div class="flex items-center justify-between gap-2"><span class="text-sm font-medium">{{ $action->action }}</span><div class="flex gap-1"><x-ui.status-badge :status="$action->risk" /><x-ui.status-badge :status="$action->status" /></div></div>
                             <code class="block break-all rounded bg-muted px-2 py-1 text-xs">{{ $action->command }}</code>
                             <p class="text-xs text-muted-foreground">{{ $action->reason }}</p>
-                            @if ($action->status === 'pending')
+                            @if ($action->status === 'pending' && auth()->user()->can('approve'))
                                 <div class="flex gap-2">
                                     <x-ui.button size="sm" :x-on:click="'$store.confirm.ask({ title: \'Run this exact command?\', message: '.\Illuminate\Support\Js::from($action->command).', label: \'Approve and run\', action: () => $wire.approve('.$action->id.') })'">Approve and run</x-ui.button>
                                     <x-ui.button size="sm" variant="outline" wire:click="reject({{ $action->id }})">Reject</x-ui.button>

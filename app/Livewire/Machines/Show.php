@@ -3,7 +3,7 @@
 namespace App\Livewire\Machines;
 
 use App\Ai\ScanRunner;
-use App\Livewire\Concerns\AuthorizesAdmin;
+use App\Livewire\Concerns\AuthorizesAccess;
 use App\Livewire\Concerns\ListensToRealtime;
 use App\Livewire\Concerns\StartsScans;
 use App\Models\AgentRun;
@@ -27,7 +27,7 @@ use Throwable;
 #[Layout('components.layouts.app')]
 class Show extends Component
 {
-    use AuthorizesAdmin;
+    use AuthorizesAccess;
     use ListensToRealtime;
     use StartsScans;
 
@@ -53,6 +53,8 @@ class Show extends Component
 
     public function scan(ScanRunner $runner)
     {
+        $this->allow('approve');
+
         return $this->queueScan($runner, $this->machine());
     }
 
@@ -63,17 +65,20 @@ class Show extends Component
 
     public function issueLink(): void
     {
+        $this->allow('admin');
         $this->machine()->issueProvisionToken();
         $this->dispatch('toast', message: 'One-hour provisioning link issued', type: 'success');
     }
 
     public function revokeLink(): void
     {
+        $this->allow('admin');
         $this->machine()->forceFill(['provision_token' => null, 'provision_token_expires_at' => null])->save();
     }
 
     public function showHostKey(): void
     {
+        $this->allow('admin');
         try {
             $this->presented = HostKeyFingerprint::fetch($this->machine());
         } catch (Throwable $e) {
@@ -88,6 +93,7 @@ class Show extends Component
 
     public function pin(HostKeyPinner $pinner): void
     {
+        $this->allow('admin');
         $this->validate(['fingerprint' => ['required', 'string']]);
 
         [$status] = $pinner->pinVerified($this->machine(), $this->fingerprint);
@@ -105,6 +111,7 @@ class Show extends Component
 
     public function checkClient(ClientUpdater $updater): void
     {
+        $this->allow('approve');
         $status = $updater->check($this->machine());
 
         $this->dispatch('toast', message: $status->label(), description: $status->error ?? '', type: $status->isUpToDate() ? 'success' : ($status->state === 'unreachable' ? 'error' : 'warning'));
@@ -112,6 +119,7 @@ class Show extends Component
 
     public function updateClient(ClientUpdater $updater): void
     {
+        $this->allow('admin');
         try {
             $status = $updater->deploy($this->machine());
             $this->dispatch('toast', message: 'Client updated', description: $status->installed ?? '', type: 'success');
@@ -122,6 +130,7 @@ class Show extends Component
 
     public function acceptNote(int $id): void
     {
+        $this->allow('admin');
         $machine = $this->machine();
         $suggestion = MemorySuggestion::where('machine_id', $machine->id)->where('status', 'pending')->findOrFail($id);
         $memory = trim($machine->memory."\n- ".$suggestion->note);
@@ -139,11 +148,13 @@ class Show extends Component
 
     public function dismissNote(int $id): void
     {
+        $this->allow('approve');
         MemorySuggestion::where('machine_id', $this->machineId)->where('status', 'pending')->whereKey($id)->update(['status' => 'dismissed']);
     }
 
     public function revokeTrust(string $action): void
     {
+        $this->allow('admin');
         $machine = $this->machine();
         $machine->forceFill(['trusted_actions' => array_values(array_diff($machine->trusted_actions ?? [], [$action])) ?: null])->save();
         app(AuditTrail::class)->record($machine, null, 'action_trust_revoked', $action, []);
@@ -155,6 +166,7 @@ class Show extends Component
     /** Planned work: mutes scan and machine alerts and skips scheduled scans until it ends (approvals still reach you). */
     public function startPlannedWork(int $hours): void
     {
+        $this->allow('approve');
         abort_unless(in_array($hours, self::PLANNED_WORK_HOURS, true), 422);
 
         $machine = $this->machine();
@@ -165,6 +177,7 @@ class Show extends Component
 
     public function endPlannedWork(): void
     {
+        $this->allow('approve');
         $machine = $this->machine();
         $machine->update(['maintenance_until' => null]);
         app(AuditTrail::class)->record($machine, null, 'planned_work_ended', 'planned work ended');
@@ -173,18 +186,21 @@ class Show extends Component
 
     public function revoke(AccessControl $access): void
     {
+        $this->allow('admin');
         $cancelled = $access->revoke($this->machine());
         $this->dispatch('toast', message: 'Access revoked', description: "{$cancelled} pending action(s) cancelled. Run the revocation script on the machine too.", type: 'warning');
     }
 
     public function restore(AccessControl $access): void
     {
+        $this->allow('admin');
         $access->lift($this->machine());
         $this->dispatch('toast', message: 'Revocation lifted: re-provision the machine', type: 'success');
     }
 
     public function delete()
     {
+        $this->allow('admin');
         $this->machine()->delete();
         session()->flash('toast', ['message' => 'Machine deleted', 'type' => 'success']);
 

@@ -117,6 +117,11 @@ TXT,
     //   'claude-sonnet-5-5' => ['input' => 0.0, 'output' => 0.0, 'cache_read' => 0.0, 'cache_write' => 0.0],
     'pricing' => [],
 
+    'auth' => [
+        // Every dashboard user must pair an authenticator app at their first login (TOTP).
+        'require_two_factor' => (bool) env('SENTINEL_REQUIRE_2FA', true),
+    ],
+
     'metrics' => [
         // How often machines are sampled (php artisan sentinel:collect-metrics), and when a trend becomes an alert.
         'interval_minutes' => (int) env('SENTINEL_METRICS_INTERVAL', 15),

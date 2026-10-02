@@ -1,10 +1,12 @@
 <div @realtime wire:poll.60s @else wire:poll.10s @endrealtime class="space-y-6">
     <x-ui.page-header title="Machines" description="Servers Sentinel watches over SSH.">
         <x-slot:actions>
+            @can('admin')
             @if ($outdated)
                 <x-ui.button variant="outline" wire:click="updateOutdated" wire:loading.attr="disabled" wire:target="updateOutdated">@svg('lucide-cloud-download') Update {{ $outdated }} client{{ $outdated > 1 ? 's' : '' }}</x-ui.button>
             @endif
             <x-ui.button :href="route('machines.create')">@svg('lucide-plus') Add machine</x-ui.button>
+            @endcan
         </x-slot:actions>
     </x-ui.page-header>
 

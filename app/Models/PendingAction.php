@@ -13,11 +13,11 @@ use Illuminate\Support\Carbon;
  */ class PendingAction extends Model
 {
     /** @var list<string> */
-    protected $fillable = ['machine_id', 'agent_run_id', 'action', 'arguments', 'command', 'risk', 'reason', 'status', 'output', 'decided_at', 'run_after'];
+    protected $fillable = ['machine_id', 'agent_run_id', 'action', 'arguments', 'command', 'risk', 'reason', 'status', 'output', 'decided_at', 'run_after', 'approvals'];
 
     protected function casts(): array
     {
-        return ['arguments' => 'array', 'decided_at' => 'datetime', 'run_after' => 'datetime'];
+        return ['arguments' => 'array', 'decided_at' => 'datetime', 'run_after' => 'datetime', 'approvals' => 'array'];
     }
 
     /** @return BelongsTo<Machine, $this> */

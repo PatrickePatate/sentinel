@@ -2,7 +2,7 @@
 
 namespace App\Livewire\Scans;
 
-use App\Livewire\Concerns\AuthorizesAdmin;
+use App\Livewire\Concerns\AuthorizesAccess;
 use App\Livewire\Concerns\ListensToRealtime;
 use App\Models\AgentRun;
 use App\Models\Machine;
@@ -14,7 +14,7 @@ use Livewire\WithPagination;
 #[Layout('components.layouts.app', ['title' => 'Scans'])]
 class Index extends Component
 {
-    use AuthorizesAdmin, ListensToRealtime, WithPagination;
+    use AuthorizesAccess, ListensToRealtime, WithPagination;
 
     #[Url]
     public string $status = '';

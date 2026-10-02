@@ -4,7 +4,8 @@
             <x-ui.badge :variant="$machine->environment === 'production' ? 'outline' : 'secondary'">{{ $machine->environment }}</x-ui.badge>
             @if ($machine->isRevoked())<x-ui.badge variant="destructive">Revoked</x-ui.badge>@endif
             @if ($machine->underPlannedWork())<x-ui.badge variant="warning" dot>Planned work until {{ $machine->maintenance_until->format('H:i') }}</x-ui.badge>@elseif ($machine->inMaintenanceWindow())<x-ui.badge variant="info" dot>Maintenance window</x-ui.badge>@endif
-            <x-ui.button variant="outline" :href="route('machines.edit', $machine)">@svg('lucide-pencil') Edit</x-ui.button>
+            @can('admin')<x-ui.button variant="outline" :href="route('machines.edit', $machine)">@svg('lucide-pencil') Edit</x-ui.button>@endcan
+            @can('approve')
             <x-ui.button x-on:click="$dispatch('open-modal', 'scan')" :disabled="$machine->isRevoked() || ! $machine->host_key_fingerprint">@svg('lucide-scan-search') Run a scan</x-ui.button>
             <x-ui.dropdown>
                 <x-slot:trigger><x-ui.button variant="outline" size="icon" aria-label="More">@svg('lucide-ellipsis')</x-ui.button></x-slot:trigger>
@@ -15,13 +16,16 @@
                         <x-ui.dropdown-item wire:click="startPlannedWork({{ $hours }})">@svg('lucide-bell-off') Planned work: mute alerts {{ $hours }}h</x-ui.dropdown-item>
                     @endforeach
                 @endif
+                @can('admin')
                 @if ($machine->isRevoked())
                     <x-ui.dropdown-item wire:click="restore">@svg('lucide-undo-2') Lift revocation</x-ui.dropdown-item>
                 @else
                     <x-ui.dropdown-item destructive x-on:click="$store.confirm.ask({ title: 'Revoke access?', message: 'Sentinel is blocked from this machine at once and pending actions are cancelled. You still have to run the revocation script on the machine.', label: 'Revoke', destructive: true, action: () => $wire.revoke() })">@svg('lucide-ban') Revoke access</x-ui.dropdown-item>
                 @endif
                 <x-ui.dropdown-item destructive x-on:click="$store.confirm.ask({ title: 'Delete this machine?', message: 'Its scans and history are deleted too.', label: 'Delete', destructive: true, action: () => $wire.delete() })">@svg('lucide-trash-2') Delete</x-ui.dropdown-item>
+                @endcan
             </x-ui.dropdown>
+            @endcan
         </x-slot:actions>
     </x-ui.page-header>
 
@@ -84,11 +88,13 @@
                 @else
                     <p class="text-sm text-muted-foreground">Issue a link, valid one hour, bound to this machine. Anyone holding it can download the script, which contains no secret key.</p>
                 @endif
+                @can('admin')
                 <x-slot:footer>
                     <x-ui.button size="sm" variant="outline" wire:click="issueLink">@svg('lucide-link') {{ $machine->hasProvisionToken() ? 'Issue a new link' : 'Issue a link' }}</x-ui.button>
                     @if ($machine->hasProvisionToken())<x-ui.button size="sm" variant="ghost" wire:click="revokeLink">Invalidate</x-ui.button>@endif
                     <x-ui.button size="sm" variant="ghost" class="ml-auto" :href="route('machines.provision-script', $machine)" :navigate="false" download>@svg('lucide-download') Download the script instead</x-ui.button>
                 </x-slot:footer>
+                @endcan
             </x-ui.card>
 
             <x-ui.card title="2. Host key" description="Sentinel refuses to connect to a server whose host key it did not pin.">
@@ -100,16 +106,20 @@
                         <p class="mb-1 text-xs font-medium">Reported by the script:</p>
                         <ul class="mb-4 space-y-0.5 font-mono text-xs text-muted-foreground">@foreach ($machine->host_keys_reported as $reported)<li>{{ $reported }}</li>@endforeach</ul>
                     @endif
+                    @can('admin')
                     <form wire:submit="pin" class="flex flex-col gap-2 sm:flex-row">
                         <x-ui.input wire:model="fingerprint" placeholder="SHA256:…" class="font-mono" />
                         <x-ui.button type="submit" wire:loading.attr="disabled" wire:target="pin">Verify and pin</x-ui.button>
                     </form>
+                    @endcan
                     @error('fingerprint')<p class="mt-2 text-xs text-destructive">{{ $message }}</p>@enderror
                 @endif
+                @can('admin')
                 <x-slot:footer>
                     <x-ui.button size="sm" variant="outline" wire:click="showHostKey" wire:loading.attr="disabled" wire:target="showHostKey">Show the key the server presents</x-ui.button>
                     @if ($presented)<code class="break-all text-xs">{{ $presented }}</code>@endif
                 </x-slot:footer>
+                @endcan
             </x-ui.card>
 
             <x-ui.card title="Public key" description="The only part of Sentinel's SSH key that leaves Sentinel (restricted to SENTINEL_SOURCE_IPS when set).">

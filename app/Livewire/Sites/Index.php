@@ -2,7 +2,7 @@
 
 namespace App\Livewire\Sites;
 
-use App\Livewire\Concerns\AuthorizesAdmin;
+use App\Livewire\Concerns\AuthorizesAccess;
 use App\Livewire\Concerns\ListensToRealtime;
 use App\Models\Machine;
 use App\Models\SiteCheck;
@@ -13,7 +13,7 @@ use Livewire\Component;
 #[Layout('components.layouts.app', ['title' => 'Sites'])]
 class Index extends Component
 {
-    use AuthorizesAdmin;
+    use AuthorizesAccess;
     use ListensToRealtime;
 
     public ?int $machine_id = null;
@@ -24,6 +24,7 @@ class Index extends Component
 
     public function add(SiteMonitor $monitor): void
     {
+        $this->allow('admin');
         $data = $this->validate([
             'machine_id' => ['required', 'integer', 'exists:machines,id'],
             'url' => ['required', 'string', 'max:500', 'url:http,https', 'regex:#^https?://[^\s/]+(/\S*)?$#i'],
@@ -55,18 +56,21 @@ class Index extends Component
 
     public function checkNow(int $id, SiteMonitor $monitor): void
     {
+        $this->allow('approve');
         $site = $monitor->check(SiteCheck::with('machine')->findOrFail($id));
         $this->dispatch('toast', message: $site->ok ? 'The site answers' : 'The site is down', description: $site->ok ? "HTTP {$site->status_code}, {$site->response_ms} ms" : (string) $site->error, type: $site->ok ? 'success' : 'error');
     }
 
     public function toggleAnalysis(int $id): void
     {
+        $this->allow('admin');
         $site = SiteCheck::findOrFail($id);
         $site->update(['analyze_on_down' => ! $site->analyze_on_down]);
     }
 
     public function remove(int $id): void
     {
+        $this->allow('admin');
         SiteCheck::whereKey($id)->delete();
         $this->dispatch('toast', message: 'Site removed');
     }

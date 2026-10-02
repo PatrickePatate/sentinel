@@ -2,7 +2,7 @@
 
 namespace App\Livewire\Findings;
 
-use App\Livewire\Concerns\AuthorizesAdmin;
+use App\Livewire\Concerns\AuthorizesAccess;
 use App\Livewire\Concerns\ListensToRealtime;
 use App\Models\Finding;
 use App\Models\Machine;
@@ -16,7 +16,7 @@ use Livewire\WithPagination;
 #[Layout('components.layouts.app', ['title' => 'Issues'])]
 class Index extends Component
 {
-    use AuthorizesAdmin, ListensToRealtime, WithPagination;
+    use AuthorizesAccess, ListensToRealtime, WithPagination;
 
     public const MUTE_DAYS = [7, 30, 90];
 
@@ -37,11 +37,13 @@ class Index extends Component
 
     public function acknowledge(int $id): void
     {
+        $this->allow('approve');
         $this->change($id, ['status' => 'acknowledged', 'muted_until' => null], 'finding_acknowledged');
     }
 
     public function mute(int $id, int $days): void
     {
+        $this->allow('approve');
         abort_unless(in_array($days, self::MUTE_DAYS, true), 422);
 
         $this->change($id, ['status' => 'muted', 'muted_until' => now()->addDays($days)], 'finding_muted', ['days' => $days]);
@@ -50,12 +52,14 @@ class Index extends Component
     /** Back to open, e.g. after an acknowledgement or a mute that was a mistake. */
     public function reopen(int $id): void
     {
+        $this->allow('approve');
         $this->change($id, ['status' => 'open', 'muted_until' => null, 'resolved_at' => null, 'resolved_run_id' => null], 'finding_reopened');
     }
 
     /** Fixed by hand: the next scan reopens it if it is still there. */
     public function resolve(int $id): void
     {
+        $this->allow('approve');
         $this->change($id, ['status' => 'resolved', 'muted_until' => null, 'resolved_at' => now(), 'resolved_run_id' => null], 'finding_resolved');
     }
 

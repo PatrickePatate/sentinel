@@ -3,7 +3,7 @@
 namespace App\Livewire;
 
 use App\Ai\ScanRunner;
-use App\Livewire\Concerns\AuthorizesAdmin;
+use App\Livewire\Concerns\AuthorizesAccess;
 use App\Models\ChatMessage;
 use App\Models\Machine;
 use App\Support\SafeMarkdown;
@@ -17,7 +17,7 @@ use Livewire\Component;
 
 class MachineChat extends Component
 {
-    use AuthorizesAdmin;
+    use AuthorizesAccess;
 
     #[Locked]
     public int $machineId;
@@ -31,6 +31,7 @@ class MachineChat extends Component
 
     public function send(ScanRunner $runner): void
     {
+        $this->allow('approve');
         $this->validate(['message' => ['required', 'string', 'max:2000']]);
 
         $throttleKey = 'chat:'.auth()->id();
@@ -81,6 +82,7 @@ class MachineChat extends Component
 
     public function clear(): void
     {
+        $this->allow('approve');
         ChatMessage::where('machine_id', $this->machineId)->where('user_id', auth()->id())->delete();
     }
 

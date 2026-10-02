@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Auth;
 
+use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
@@ -35,7 +36,10 @@ class Login extends Component
             return;
         }
 
-        if (! Auth::attempt(['email' => $this->email, 'password' => $this->password], $this->remember)) {
+        $credentials = ['email' => $this->email, 'password' => $this->password];
+        $user = Auth::getProvider()->retrieveByCredentials($credentials);
+
+        if (! $user || ! Auth::getProvider()->validateCredentials($user, $credentials)) {
             RateLimiter::hit($throttleKey);
             RateLimiter::hit($ipKey, 600);
             $this->addError('email', 'These credentials do not match our records.');
@@ -45,6 +49,15 @@ class Login extends Component
 
         RateLimiter::clear($throttleKey);
         session()->regenerate();
+
+        // The password alone is not enough: the session only remembers who is half way through, for five minutes.
+        if ($user instanceof User && $user->hasTwoFactor()) {
+            session()->put('login.two_factor', ['id' => $user->id, 'remember' => $this->remember, 'expires' => now()->addMinutes(5)->timestamp]);
+
+            return $this->redirectRoute('two-factor.challenge', navigate: true);
+        }
+
+        Auth::login($user, $this->remember);
 
         return $this->redirectIntended(route('dashboard'), navigate: true);
     }

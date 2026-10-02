@@ -45,6 +45,16 @@ class UserFactory extends Factory
 
     public function admin(): static
     {
-        return $this->state(fn () => ['is_admin' => true]);
+        return $this->state(fn () => ['role' => 'admin']);
+    }
+
+    public function approver(): static
+    {
+        return $this->state(fn () => ['role' => 'approver']);
+    }
+
+    public function viewer(): static
+    {
+        return $this->state(fn () => ['role' => 'viewer']);
     }
 }

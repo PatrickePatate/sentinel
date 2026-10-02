@@ -13,6 +13,7 @@ use App\Ssh\Gate\GateVerdict;
 use App\Ssh\Gate\RiskGate;
 use App\Ssh\Tools\InvalidToolArguments;
 use App\Support\Realtime;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use Spatie\Activitylog\Models\Activity;
 use Throwable;
@@ -147,6 +148,11 @@ class ActionExecutor
     /** @param array<string, mixed> $context Extra audit properties (e.g. who approved, through which channel). */
     public function approve(PendingAction $pending, array $context = [], string $from = 'pending'): string
     {
+        // A scheduled action already collected its approvals when it was scheduled.
+        if ($from === 'pending' && ($waiting = $this->awaitSecondApproval($pending, $context)) !== null) {
+            return $waiting;
+        }
+
         $this->claim($pending, 'running', $from);
 
         $machine = $pending->machine;
@@ -180,15 +186,62 @@ class ActionExecutor
      *
      * @param  array<string, mixed>  $context
      */
-    public function schedule(PendingAction $pending, array $context = []): void
+    public function schedule(PendingAction $pending, array $context = []): ?string
     {
         $window = $pending->machine->maintenanceWindow();
         abort_unless($window !== null, 422, 'This machine has no maintenance window.');
+
+        if (($waiting = $this->awaitSecondApproval($pending, $context)) !== null) {
+            return $waiting;
+        }
 
         $this->claim($pending, 'scheduled');
         $pending->update(['run_after' => $window[0]]);
         $this->audit->record($pending->machine, $pending->agentRun, 'action_scheduled', $pending->action, ['pending_action_id' => $pending->id, 'run_after' => $window[0]->toIso8601String()] + $context);
         Realtime::push('actions');
+
+        return null;
+    }
+
+    /**
+     * On a machine that requires two people, the first approval is only recorded: null means "go ahead", otherwise the
+     * message says what is still missing. Both must be dashboard users, and different ones: a Telegram or command line
+     * approval is not tied to a Sentinel account, so the same person could count twice.
+     *
+     * @param  array<string, mixed>  $context
+     */
+    private function awaitSecondApproval(PendingAction $pending, array $context): ?string
+    {
+        if (! $pending->machine->two_person_approval) {
+            return null;
+        }
+
+        $user = auth()->user();
+
+        if (! $user || isset($context['via'])) {
+            $this->audit->record($pending->machine, $pending->agentRun, 'action_approval_denied', $pending->action, ['pending_action_id' => $pending->id, 'reason' => 'two-person approval needs dashboard users'] + $context);
+
+            return 'ERROR: this machine needs two approvals from different people in the dashboard. Approve it there.';
+        }
+
+        return DB::transaction(function () use ($pending, $user) {
+            $approvals = PendingAction::whereKey($pending->id)->lockForUpdate()->value('approvals');
+            $approvals = is_string($approvals) ? json_decode($approvals, true) : ($approvals ?? []);
+
+            if (collect($approvals)->contains('user_id', $user->id)) {
+                return 'WAITING: you already approved it; a second person has to approve it too.';
+            }
+
+            if ($approvals !== []) {
+                return null;
+            }
+
+            $pending->update(['approvals' => [['user_id' => $user->id, 'name' => $user->name, 'at' => now()->toIso8601String()]]]);
+            $this->audit->record($pending->machine, $pending->agentRun, 'action_first_approval', $pending->action, ['pending_action_id' => $pending->id]);
+            Realtime::push('actions');
+
+            return 'WAITING: first approval recorded; a second person has to approve it before it runs.';
+        });
     }
 
     /** Runs the scheduled actions whose window has come. One whose window was missed (scheduler down) waits for the next one. */

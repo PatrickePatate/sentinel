@@ -2,7 +2,7 @@
 
 namespace App\Livewire;
 
-use App\Livewire\Concerns\AuthorizesAdmin;
+use App\Livewire\Concerns\AuthorizesAccess;
 use App\Livewire\Concerns\ListensToRealtime;
 use App\Models\AgentRun;
 use App\Models\Machine;
@@ -14,7 +14,7 @@ use Spatie\Activitylog\Models\Activity;
 #[Layout('components.layouts.app', ['title' => 'Dashboard'])]
 class Dashboard extends Component
 {
-    use AuthorizesAdmin;
+    use AuthorizesAccess;
     use ListensToRealtime;
 
     public function render()

@@ -3,7 +3,7 @@
 namespace App\Livewire\Machines;
 
 use App\Ai\ScanRunner;
-use App\Livewire\Concerns\AuthorizesAdmin;
+use App\Livewire\Concerns\AuthorizesAccess;
 use App\Livewire\Concerns\ListensToRealtime;
 use App\Livewire\Concerns\StartsScans;
 use App\Models\AgentRun;
@@ -17,7 +17,7 @@ use Throwable;
 #[Layout('components.layouts.app', ['title' => 'Machines'])]
 class Index extends Component
 {
-    use AuthorizesAdmin;
+    use AuthorizesAccess;
     use ListensToRealtime;
     use StartsScans;
 
@@ -28,6 +28,7 @@ class Index extends Component
 
     public function startScan(int $machineId): void
     {
+        $this->allow('approve');
         $this->scanMachineId = $machineId;
         $this->resetScan();
         $this->dispatch('open-modal', 'scan');
@@ -40,12 +41,15 @@ class Index extends Component
 
     public function scan(ScanRunner $runner)
     {
+        $this->allow('approve');
+
         return $this->queueScan($runner, Machine::findOrFail($this->scanMachineId));
     }
 
     /** Pushes the current client bundle to every machine that runs an older one. */
     public function updateOutdated(ClientUpdater $updater): void
     {
+        $this->allow('admin');
         $updated = 0;
         $failed = [];
 

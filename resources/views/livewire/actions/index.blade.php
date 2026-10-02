@@ -21,11 +21,14 @@
                 </div>
                 <code class="mt-3 block break-all rounded-md bg-muted px-3 py-2 text-xs">{{ $action->command }}</code>
                 <p class="mt-2 text-sm text-muted-foreground"><span class="font-medium text-foreground">Why held:</span> {{ $action->reason }}</p>
+                @if ($action->machine->two_person_approval && $action->status === 'pending')
+                    <p class="mt-2 text-sm"><x-ui.badge variant="info">{{ count($action->approvals ?? []) }} of 2 approvals</x-ui.badge> @foreach ($action->approvals ?? [] as $approval)<span class="text-xs text-muted-foreground">approved by {{ $approval['name'] }} {{ \Illuminate\Support\Carbon::parse($approval['at'])->diffForHumans() }}</span>@endforeach</p>
+                @endif
                 @if ($action->output)<pre class="mt-3 max-h-48 overflow-auto rounded-md border bg-muted/50 p-3 text-xs">{{ $action->output }}</pre>@endif
-                @if ($action->status === 'pending')
+                @if ($action->status === 'pending' && auth()->user()->can('approve'))
                     <x-slot:footer>
                         <x-ui.button size="sm" :x-on:click="'$store.confirm.ask({ title: \'Run this exact command now?\', message: '.\Illuminate\Support\Js::from($action->machine->name.': '.$action->command).', label: \'Approve and run\', action: () => $wire.approve('.$action->id.') })'">@svg('lucide-check') Approve and run</x-ui.button>
-                        @if (in_array($action->action, $trustable, true) && ! $action->machine->trusts($action->action))
+                        @if (in_array($action->action, $trustable, true) && ! $action->machine->trusts($action->action) && auth()->user()->can('admin'))
                             <x-ui.button size="sm" variant="outline" :x-on:click="'$store.confirm.ask({ title: \'Always allow this action on this machine?\', message: '.\Illuminate\Support\Js::from('Runs it now, then lets the agent run '.$action->action.' on '.$action->machine->name.' without asking again (the risk gate classifier is skipped; the autonomous action quota and the flapping guard still apply). You can revoke this on the machine page.').', label: \'Run and always allow\', action: () => $wire.approve('.$action->id.', true) })'" title="@if ($ranBefore->get($action->machine_id.':'.$action->action, 0) > 0)Approved and run successfully {{ $ranBefore->get($action->machine_id.':'.$action->action) }} time(s) before on this machine @endif">@svg('lucide-shield-check') Approve and always allow</x-ui.button>
                         @endif
                         @if ($action->machine->hasMaintenanceWindow())
@@ -33,7 +36,7 @@
                         @endif
                         <x-ui.button size="sm" variant="outline" wire:click="reject({{ $action->id }})">@svg('lucide-x') Reject</x-ui.button>
                     </x-slot:footer>
-                @elseif ($action->status === 'scheduled')
+                @elseif ($action->status === 'scheduled' && auth()->user()->can('approve'))
                     <x-slot:footer>
                         <span class="text-sm text-muted-foreground">Runs at the start of the window, {{ $action->run_after?->format('D M d, H:i') }}.</span>
                         <x-ui.button size="sm" variant="outline" wire:click="reject({{ $action->id }})">@svg('lucide-x') Cancel</x-ui.button>

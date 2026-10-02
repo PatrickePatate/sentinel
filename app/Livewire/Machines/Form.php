@@ -2,7 +2,7 @@
 
 namespace App\Livewire\Machines;
 
-use App\Livewire\Concerns\AuthorizesAdmin;
+use App\Livewire\Concerns\AuthorizesAccess;
 use App\Models\Machine;
 use Closure;
 use Illuminate\Validation\Rule;
@@ -13,7 +13,12 @@ use Livewire\Component;
 #[Layout('components.layouts.app')]
 class Form extends Component
 {
-    use AuthorizesAdmin;
+    use AuthorizesAccess;
+
+    protected function requiredAbility(): string
+    {
+        return 'admin';
+    }
 
     #[Locked]
     public ?int $machineId = null;
@@ -46,6 +51,8 @@ class Form extends Component
 
     public bool $autonomy_medium = false;
 
+    public bool $two_person_approval = false;
+
     /** @var list<int> ISO weekdays of the maintenance window. */
     public array $maintenance_days = [];
 
@@ -62,6 +69,7 @@ class Form extends Component
             $this->fill($machine->only(['name', 'host', 'port', 'environment']));
             $this->autonomy_enabled = (bool) $machine->autonomy_enabled;
             $this->autonomy_medium = (bool) $machine->autonomy_medium;
+            $this->two_person_approval = (bool) $machine->two_person_approval;
             $this->scan_interval_minutes = (int) $machine->scan_interval_minutes;
             $this->webserver_enabled = (bool) $machine->webserver_enabled;
             $this->webserver_interval_minutes = (int) $machine->webserver_interval_minutes;
@@ -92,6 +100,7 @@ class Form extends Component
             'environment' => ['required', 'in:production,staging'],
             'autonomy_enabled' => ['boolean'],
             'autonomy_medium' => ['boolean'],
+            'two_person_approval' => ['boolean'],
             'scan_interval_minutes' => ['nullable', 'integer', Rule::in(array_keys(Machine::scanProfiles()['audit']['frequencies']))],
             'webserver_enabled' => ['boolean'],
             'webserver_full_check_hours' => ['required', 'integer', Rule::in(array_keys(config('sentinel.scheduling.precheck.full_check_choices')))],

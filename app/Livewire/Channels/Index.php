@@ -2,7 +2,7 @@
 
 namespace App\Livewire\Channels;
 
-use App\Livewire\Concerns\AuthorizesAdmin;
+use App\Livewire\Concerns\AuthorizesAccess;
 use App\Models\NotificationChannel;
 use App\Notifications\Channels\TelegramWebhook;
 use App\Notifications\TestNotification;
@@ -13,7 +13,12 @@ use Throwable;
 #[Layout('components.layouts.app', ['title' => 'Notifications'])]
 class Index extends Component
 {
-    use AuthorizesAdmin;
+    use AuthorizesAccess;
+
+    protected function requiredAbility(): string
+    {
+        return 'admin';
+    }
 
     public function test(int $id): void
     {

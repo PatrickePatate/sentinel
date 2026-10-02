@@ -2,7 +2,7 @@
 
 namespace App\Livewire;
 
-use App\Livewire\Concerns\AuthorizesAdmin;
+use App\Livewire\Concerns\AuthorizesAccess;
 use App\Livewire\Concerns\ListensToRealtime;
 use App\Models\AgentRun;
 use App\Models\Finding;
@@ -16,7 +16,7 @@ use Livewire\Component;
 #[Layout('components.layouts.app', ['title' => 'Fleet'])]
 class Fleet extends Component
 {
-    use AuthorizesAdmin, ListensToRealtime;
+    use AuthorizesAccess, ListensToRealtime;
 
     public const FILTERS = ['' => 'All machines', 'issues' => 'With open issues', 'security' => 'Security updates pending', 'reboot' => 'Reboot required', 'disk' => 'Disk over 80%'];
 

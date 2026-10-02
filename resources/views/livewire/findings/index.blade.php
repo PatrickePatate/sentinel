@@ -46,6 +46,7 @@
                                 @endif
                             </td>
                             <td class="text-right">
+                                @can('approve')
                                 <x-ui.dropdown>
                                     <x-slot:trigger><x-ui.button variant="ghost" size="icon" aria-label="Change">@svg('lucide-ellipsis')</x-ui.button></x-slot:trigger>
                                     @if ($finding->status === 'open')
@@ -61,6 +62,7 @@
                                         <x-ui.dropdown-item wire:click="reopen({{ $finding->id }})">@svg('lucide-rotate-ccw') Reopen</x-ui.dropdown-item>
                                     @endif
                                 </x-ui.dropdown>
+                                @endcan
                             </td>
                         </tr>
                     @endforeach

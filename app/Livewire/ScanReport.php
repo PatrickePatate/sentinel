@@ -4,7 +4,7 @@ namespace App\Livewire;
 
 use App\Ai\ScanRunner;
 use App\Jobs\RunFollowUp;
-use App\Livewire\Concerns\AuthorizesAdmin;
+use App\Livewire\Concerns\AuthorizesAccess;
 use App\Livewire\Concerns\ListensToRealtime;
 use App\Models\AgentRun;
 use App\Models\Finding;
@@ -27,7 +27,7 @@ use Throwable;
 #[Layout('components.layouts.app')]
 class ScanReport extends Component
 {
-    use AuthorizesAdmin;
+    use AuthorizesAccess;
     use ListensToRealtime;
 
     public const FIX_FINDINGS_MESSAGE = 'Apply the remediation you recommended in your report, using the corrective actions available to you. '
@@ -46,12 +46,14 @@ class ScanReport extends Component
 
     public function fixFindings(ScanRunner $runner): void
     {
+        $this->allow('approve');
         $this->message = self::FIX_FINDINGS_MESSAGE;
         $this->ask($runner);
     }
 
     public function ask(ScanRunner $runner): void
     {
+        $this->allow('approve');
         $this->validate(['message' => ['required', 'string', 'max:2000']]);
 
         $scan = $this->scan();
@@ -80,11 +82,13 @@ class ScanReport extends Component
 
     public function approve(int $id, ActionExecutor $executor): void
     {
+        $this->allow('approve');
         $pending = $this->actionOfThread($id);
 
         try {
-            $executor->approve($pending);
-            $this->dispatch('toast', message: 'Action '.$pending->fresh()->status, type: 'success');
+            $output = $executor->approve($pending);
+            $status = $pending->fresh()->status;
+            $this->dispatch('toast', message: $status === 'pending' ? 'Not run yet' : 'Action '.$status, description: $status === 'pending' ? $output : null, type: $status === 'pending' ? 'info' : 'success');
         } catch (Throwable $e) {
             report($e);
             $this->dispatch('toast', message: 'Could not run the action', description: $e->getMessage(), type: 'error');
@@ -93,6 +97,7 @@ class ScanReport extends Component
 
     public function reject(int $id, ActionExecutor $executor): void
     {
+        $this->allow('approve');
         $executor->reject($this->actionOfThread($id));
     }
 

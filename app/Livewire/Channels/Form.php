@@ -3,7 +3,7 @@
 namespace App\Livewire\Channels;
 
 use App\Ai\Severity;
-use App\Livewire\Concerns\AuthorizesAdmin;
+use App\Livewire\Concerns\AuthorizesAccess;
 use App\Models\NotificationChannel;
 use App\Notifications\Channels\TelegramClient;
 use Illuminate\Support\Str;
@@ -16,7 +16,12 @@ use Throwable;
 #[Layout('components.layouts.app')]
 class Form extends Component
 {
-    use AuthorizesAdmin;
+    use AuthorizesAccess;
+
+    protected function requiredAbility(): string
+    {
+        return 'admin';
+    }
 
     #[Locked]
     public ?int $channelId = null;

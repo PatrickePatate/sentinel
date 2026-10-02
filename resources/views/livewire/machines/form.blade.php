@@ -34,6 +34,7 @@
                 </div>
                 <x-ui.switch wire:model="autonomy_enabled" label="Let the agent run low-risk corrective actions on its own" description="Only after a second classifier model agrees. High risk is never run." />
                 @if ($autonomy_enabled)<x-ui.switch wire:model="autonomy_medium" label="Also allow moderate-risk actions" description="Moderate actions (e.g. restarting a service) go through the same classifier checks instead of always waiting for you. Off by default." class="ml-12" />@endif
+                <x-ui.switch wire:model="two_person_approval" label="Require two people to approve actions" description="An action held for approval runs only once two different dashboard users approved it (Telegram and command line approvals are refused on this machine). Autonomous low-risk actions are not affected." />
                 <details class="rounded-md border p-4" @if ($maintenance_days) open @endif>
                     <summary class="cursor-pointer text-sm font-medium">Maintenance window</summary>
                     <p class="mt-2 text-xs text-muted-foreground">A weekly slot ({{ config('app.timezone') }}) when approved actions may run: "Approve for the window" on a pending action runs it at the next one. Scan and machine alerts are muted during the window (approvals and failed action checks are not). No day picked: no window.</p>

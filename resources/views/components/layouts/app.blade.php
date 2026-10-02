@@ -8,7 +8,8 @@
         ['Scans', 'scans.index', 'lucide-scan-search', 'scans*'],
         ['Issues', 'findings.index', 'lucide-alert-triangle', 'findings*'],
         ['Pending actions', 'actions.index', 'lucide-hand', 'actions*'],
-        ['Notifications', 'channels.index', 'lucide-bell', 'channels*'],
+        ['Notifications', 'channels.index', 'lucide-bell', 'channels*', 'admin'],
+        ['Users', 'users.index', 'lucide-users', 'users*', 'admin'],
         ['Audit log', 'audit', 'lucide-clipboard-list', 'audit'],
     ];
 @endphp
@@ -32,7 +33,9 @@
             <span class="font-semibold tracking-tight">Sentinel</span>
         </div>
         <nav class="flex-1 space-y-0.5 overflow-y-auto p-3">
-            @foreach ($nav as [$label, $route, $icon, $pattern])
+            @foreach ($nav as $item)
+                @php([$label, $route, $icon, $pattern, $ability] = $item + [4 => null])
+                @continue($ability && ! auth()->user()->can($ability))
                 <a href="{{ route($route) }}" wire:navigate x-on:click="sidebar = false"
                    @class(['flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors [&_svg]:size-4', 'bg-accent text-accent-foreground' => request()->routeIs($pattern), 'text-muted-foreground hover:bg-accent/60 hover:text-foreground' => ! request()->routeIs($pattern)])>
                     @svg($icon) <span class="flex-1">{{ $label }}</span>

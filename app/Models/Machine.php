@@ -23,6 +23,7 @@ use RuntimeException;
  * @property Carbon|null $provisioned_at
  * @property Carbon|null $client_checked_at
  * @property list<string>|null $trusted_actions
+ * @property bool $two_person_approval
  */
 #[Hidden(['private_key', 'passphrase', 'provision_token'])]
 class Machine extends Model
@@ -30,7 +31,7 @@ class Machine extends Model
     use HasFactory;
 
     /** @var list<string> */
-    protected $fillable = ['name', 'host', 'port', 'username', 'private_key', 'passphrase', 'host_key_fingerprint', 'environment', 'autonomy_enabled', 'autonomy_medium', 'scan_interval_minutes', 'webserver_interval_minutes', 'webserver_enabled', 'webserver_full_check_hours', 'memory', 'gate_max_destructive', 'gate_min_reversible', 'gate_max_actions', 'maintenance_days', 'maintenance_start', 'maintenance_minutes', 'maintenance_until'];
+    protected $fillable = ['name', 'host', 'port', 'username', 'private_key', 'passphrase', 'host_key_fingerprint', 'environment', 'autonomy_enabled', 'autonomy_medium', 'scan_interval_minutes', 'webserver_interval_minutes', 'webserver_enabled', 'webserver_full_check_hours', 'memory', 'gate_max_destructive', 'gate_min_reversible', 'gate_max_actions', 'maintenance_days', 'maintenance_start', 'maintenance_minutes', 'maintenance_until', 'two_person_approval'];
 
     protected function casts(): array
     {
@@ -51,6 +52,7 @@ class Machine extends Model
             'autonomy_medium' => 'boolean',
             'maintenance_days' => 'array',
             'maintenance_until' => 'datetime',
+            'two_person_approval' => 'boolean',
         ];
     }
 

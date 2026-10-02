@@ -26,6 +26,7 @@
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="SENTINEL_REALTIME" value="false"/>
         <env name="SENTINEL_VERIFY_DELAY" value="0"/>
+        <env name="SENTINEL_REQUIRE_2FA" value="false"/>
         <env name="CACHE_STORE" value="array"/>
         <env name="DB_CONNECTION" value="sqlite"/>
         <env name="DB_DATABASE" value=":memory:"/>
