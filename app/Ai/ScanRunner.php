@@ -155,6 +155,14 @@ class ScanRunner
             $run->update(['status' => 'failed', 'report' => $e->getMessage(), 'progress' => null]);
         }
 
+        if ($run->cost_usd !== null) {
+            try {
+                app(Budget::class)->check($machine);
+            } catch (Throwable $e) {
+                report($e);
+            }
+        }
+
         Realtime::push('run', $run->id);
 
         return $run;

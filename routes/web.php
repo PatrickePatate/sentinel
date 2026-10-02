@@ -9,6 +9,7 @@ use App\Livewire\Auth\Login;
 use App\Livewire\Auth\TwoFactorChallenge;
 use App\Livewire\Auth\TwoFactorSetup;
 use App\Livewire\Channels;
+use App\Livewire\Costs;
 use App\Livewire\Dashboard;
 use App\Livewire\Findings;
 use App\Livewire\Fleet;
@@ -61,6 +62,7 @@ Route::middleware(['auth', RequireTwoFactor::class, 'can:view'])->group(function
 
     Route::get('/issues', Findings\Index::class)->name('findings.index');
     Route::get('/actions', Actions\Index::class)->name('actions.index');
+    Route::get('/costs', Costs::class)->name('costs');
 
     Route::get('/channels', Channels\Index::class)->name('channels.index');
     Route::get('/channels/create', Channels\Form::class)->name('channels.create');

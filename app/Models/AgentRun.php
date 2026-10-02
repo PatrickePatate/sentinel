@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class AgentRun extends Model
 {
     /** @var list<string> */
-    protected $fillable = ['machine_id', 'parent_run_id', 'provider', 'objective', 'status', 'messages', 'report', 'trigger', 'severity', 'summary', 'progress', 'profile', 'allow_actions', 'model', 'input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens', 'cost_usd', 'reported_findings', 'findings_diff'];
+    protected $fillable = ['machine_id', 'parent_run_id', 'provider', 'objective', 'status', 'messages', 'report', 'trigger', 'severity', 'summary', 'progress', 'profile', 'allow_actions', 'model', 'input_tokens', 'output_tokens', 'cache_read_tokens', 'cache_write_tokens', 'cost_usd', 'reported_findings', 'findings_diff', 'state_fingerprint'];
 
     protected function casts(): array
     {

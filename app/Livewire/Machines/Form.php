@@ -53,6 +53,8 @@ class Form extends Component
 
     public bool $two_person_approval = false;
 
+    public ?string $monthly_budget_usd = null;
+
     /** @var list<int> ISO weekdays of the maintenance window. */
     public array $maintenance_days = [];
 
@@ -70,6 +72,7 @@ class Form extends Component
             $this->autonomy_enabled = (bool) $machine->autonomy_enabled;
             $this->autonomy_medium = (bool) $machine->autonomy_medium;
             $this->two_person_approval = (bool) $machine->two_person_approval;
+            $this->monthly_budget_usd = $machine->monthly_budget_usd === null ? null : (string) $machine->monthly_budget_usd;
             $this->scan_interval_minutes = (int) $machine->scan_interval_minutes;
             $this->webserver_enabled = (bool) $machine->webserver_enabled;
             $this->webserver_interval_minutes = (int) $machine->webserver_interval_minutes;
@@ -101,6 +104,7 @@ class Form extends Component
             'autonomy_enabled' => ['boolean'],
             'autonomy_medium' => ['boolean'],
             'two_person_approval' => ['boolean'],
+            'monthly_budget_usd' => ['nullable', 'numeric', 'between:0,100000'],
             'scan_interval_minutes' => ['nullable', 'integer', Rule::in(array_keys(Machine::scanProfiles()['audit']['frequencies']))],
             'webserver_enabled' => ['boolean'],
             'webserver_full_check_hours' => ['required', 'integer', Rule::in(array_keys(config('sentinel.scheduling.precheck.full_check_choices')))],
@@ -129,7 +133,7 @@ class Form extends Component
         $data['webserver_interval_minutes'] = ((int) $data['webserver_interval_minutes']) ?: null;
         $data['memory'] = trim((string) $data['memory']) ?: null;
 
-        foreach (['gate_max_destructive', 'gate_min_reversible', 'gate_max_actions'] as $key) {
+        foreach (['gate_max_destructive', 'gate_min_reversible', 'gate_max_actions', 'monthly_budget_usd'] as $key) {
             $data[$key] = ($data[$key] ?? '') === '' ? null : $data[$key] + 0;
         }
         $machine->fill($data);

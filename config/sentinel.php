@@ -39,6 +39,13 @@ return [
 
         // Scheduled web server checks first look at the stack with plain commands and only call the model when something is wrong
         // (and anyway every few hours, for what a plain check cannot see).
+        // Scheduled audits first hash the machine's security-relevant state with plain commands; when it matches an AI audit
+        // younger than max_age_hours, the run is closed with that audit's verdict and no AI call.
+        'skip_unchanged' => [
+            'enabled' => (bool) env('SENTINEL_SKIP_UNCHANGED', true),
+            'max_age_hours' => 24,
+        ],
+
         'precheck' => [
             'enabled' => (bool) env('SENTINEL_PRECHECK', true),
             'full_check_hours' => 6,
@@ -109,6 +116,18 @@ TXT,
         // Autonomous (scheduled) scans can use a cheaper model. Each falls back to the default above when unset.
         'scheduled_provider' => env('SENTINEL_SCHEDULED_PROVIDER') ?: null,
         'scheduled_model' => env('SENTINEL_SCHEDULED_MODEL') ?: null,
+
+        // When a scheduled scan on that cheaper model reports at least this severity, the main model checks it again.
+        // Empty: never. Has no effect when scheduled scans already use the main model.
+        'escalate_severity' => env('SENTINEL_ESCALATE_SEVERITY', 'high') ?: null,
+    ],
+
+    'budget' => [
+        // USD per calendar month for all model usage (empty: no limit). A machine can have its own limit too.
+        // Past the limit, routine scheduled AI work stops (audits, healthy web server AI checks); manual scans, chats and
+        // checks of a problem found by the plain pre-check still run.
+        'monthly_usd' => is_numeric(env('SENTINEL_MONTHLY_BUDGET')) ? (float) env('SENTINEL_MONTHLY_BUDGET') : null,
+        'warn_percent' => 80,
     ],
 
     // USD per million tokens, by model name, used to estimate the cost of a run (providers only report tokens).

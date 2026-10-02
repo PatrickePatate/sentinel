@@ -8,6 +8,7 @@
         ['Scans', 'scans.index', 'lucide-scan-search', 'scans*'],
         ['Issues', 'findings.index', 'lucide-alert-triangle', 'findings*'],
         ['Pending actions', 'actions.index', 'lucide-hand', 'actions*'],
+        ['Costs', 'costs', 'lucide-coins', 'costs'],
         ['Notifications', 'channels.index', 'lucide-bell', 'channels*', 'admin'],
         ['Users', 'users.index', 'lucide-users', 'users*', 'admin'],
         ['Audit log', 'audit', 'lucide-clipboard-list', 'audit'],

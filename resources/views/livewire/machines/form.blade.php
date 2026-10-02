@@ -34,6 +34,9 @@
                 </div>
                 <x-ui.switch wire:model="autonomy_enabled" label="Let the agent run low-risk corrective actions on its own" description="Only after a second classifier model agrees. High risk is never run." />
                 @if ($autonomy_enabled)<x-ui.switch wire:model="autonomy_medium" label="Also allow moderate-risk actions" description="Moderate actions (e.g. restarting a service) go through the same classifier checks instead of always waiting for you. Off by default." class="ml-12" />@endif
+                <x-ui.field label="Monthly model budget (USD)" name="monthly_budget_usd" hint="Optional. Past it, routine scheduled AI scans of this machine pause until next month; manual scans and checks of detected problems still run. See the Costs page.">
+                    <x-ui.input wire:model="monthly_budget_usd" inputmode="decimal" placeholder="No limit" class="w-40" />
+                </x-ui.field>
                 <x-ui.switch wire:model="two_person_approval" label="Require two people to approve actions" description="An action held for approval runs only once two different dashboard users approved it (Telegram and command line approvals are refused on this machine). Autonomous low-risk actions are not affected." />
                 <details class="rounded-md border p-4" @if ($maintenance_days) open @endif>
                     <summary class="cursor-pointer text-sm font-medium">Maintenance window</summary>

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Ai\Budget;
 use App\Ai\ScanRunner;
 use App\Jobs\RunScan;
 use App\Models\AgentRun;
@@ -34,6 +35,12 @@ class ScanDueMachines extends Command
                     $due = $lastAt === null || $lastAt->copy()->addMinutes($machine->{$interval})->lte(now());
 
                     if (! $due || $this->alreadyRunning($machine)) {
+                        return;
+                    }
+
+                    // Over budget, routine audits wait for next month. Web server checks still run: their plain pre-check
+                    // costs nothing, and only a problem it finds calls the model (see RunScan).
+                    if ($profile === 'audit' && app(Budget::class)->exceeded($machine)) {
                         return;
                     }
 
