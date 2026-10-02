@@ -6,7 +6,9 @@ use App\Models\AgentRun;
 use App\Models\Machine;
 use App\Models\PendingAction;
 use App\Notifications\Notifier;
+use App\Ssh\Actions\HasSafeguards;
 use App\Ssh\Actions\RiskLevel;
+use App\Ssh\Actions\Verifiable;
 use App\Ssh\Gate\GateVerdict;
 use App\Ssh\Gate\RiskGate;
 use App\Ssh\Tools\InvalidToolArguments;
@@ -165,8 +167,8 @@ class ActionExecutor
             return 'ERROR: '.$message;
         }
 
-        $output = $this->run($machine, $pending->agentRun, $pending->action, $command, ['approved_pending_action_id' => $pending->id] + $context, 'action_approved');
-        $pending->update(['status' => str_starts_with($output, 'ERROR') ? 'failed' : 'executed', 'output' => $output, 'decided_at' => now()]);
+        $output = $this->run($machine, $pending->agentRun, $pending->action, $command, ['approved_pending_action_id' => $pending->id, 'arguments' => $pending->arguments ?? []] + $context, 'action_approved');
+        $pending->update(['status' => str_starts_with($output, 'ERROR') || str_contains($output, "\nVERIFICATION FAILED") ? 'failed' : 'executed', 'output' => $output, 'decided_at' => now()]);
         Realtime::push('actions');
 
         return $output;
@@ -213,8 +215,77 @@ class ActionExecutor
 
         $output = mb_strcut(mb_convert_encoding($result->output, 'UTF-8', 'UTF-8'), 0, SafeExecutor::MAX_OUTPUT_BYTES);
         $this->audit->record($machine, $run, $event, $action, $context + ['command' => $command, 'exit_code' => $result->exitCode, 'output_excerpt' => $output]);
+        $output = $output === '' ? "(no output, exit code {$result->exitCode})" : $output;
 
-        return $output === '' ? "(no output, exit code {$result->exitCode})" : $output;
+        return $output.$this->verify($machine, $run, $action, $context);
+    }
+
+    /**
+     * Checks that an action that ran had the effect it promised. A failed check is reported to the agent and to the
+     * humans; when the action names an undo, it is run straight away only if it is itself low risk with declared
+     * safeguards, and otherwise filed for approval like any other action.
+     *
+     * @param  array<string, mixed>  $context
+     */
+    private function verify(Machine $machine, ?AgentRun $run, string $actionName, array $context): string
+    {
+        $action = $this->catalog->get($actionName);
+        $verification = $action instanceof Verifiable ? $action->verification($context['arguments'] ?? []) : null;
+
+        if (! $verification) {
+            return '';
+        }
+
+        if ($delay = config('sentinel.gate.verify_delay_seconds')) {
+            sleep($delay);
+        }
+
+        try {
+            $result = $this->transport->run($machine, $verification->command, SafeExecutor::TIMEOUT_SECONDS);
+            $passed = ($verification->passes)($result);
+        } catch (Throwable $e) {
+            $result = new CommandResult($e->getMessage(), -1);
+            $passed = false;
+        }
+
+        $details = ['command' => $verification->command, 'expected' => $verification->expectation, 'exit_code' => $result->exitCode, 'output_excerpt' => mb_strcut($result->output, 0, 2000)];
+
+        if ($passed) {
+            $this->audit->record($machine, $run, 'action_verified', $actionName, $details);
+
+            return "\nVERIFIED: {$verification->expectation}.";
+        }
+
+        $this->audit->record($machine, $run, 'action_verification_failed', $actionName, $details);
+        $message = "\nVERIFICATION FAILED: expected {$verification->expectation}, the check said: ".trim(mb_strcut($result->output, 0, 300));
+        $message .= $verification->rollback ? $this->rollback($machine, $run, $actionName, $verification->rollback) : '';
+
+        app(Notifier::class)->machineAlert($machine, "{$actionName} did not have the expected effect on {$machine->name}", trim($message));
+
+        return $message;
+    }
+
+    /** @param array{0: string, 1: array<string, mixed>} $rollback */
+    private function rollback(Machine $machine, ?AgentRun $run, string $actionName, array $rollback): string
+    {
+        [$name, $arguments] = $rollback;
+        $undo = $this->catalog->get($name);
+        $command = $undo->command($arguments);
+
+        if ($undo->risk() === RiskLevel::Low && $undo instanceof HasSafeguards) {
+            $output = $this->run($machine, $run, $name, $command, ['arguments' => $arguments, 'rollback_of' => $actionName], 'action_rolled_back');
+
+            return "\nROLLED BACK with {$name}: ".trim($output);
+        }
+
+        $pending = PendingAction::create([
+            'machine_id' => $machine->id, 'agent_run_id' => $run?->id, 'action' => $name, 'arguments' => $arguments,
+            'command' => $command, 'risk' => $undo->risk()->value, 'reason' => "Undo of {$actionName}, whose check failed right after it ran.",
+        ]);
+        $this->audit->record($machine, $run, 'action_pending', $name, ['arguments' => $arguments, 'command' => $command, 'pending_action_id' => $pending->id, 'rollback_of' => $actionName]);
+        app(Notifier::class)->approvalNeeded($pending);
+
+        return "\nUNDO FILED for approval (#{$pending->id}): {$name}.";
     }
 
     /** How many times this exact command ran on the machine in the last 24 hours (autonomously or approved). */

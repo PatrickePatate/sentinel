@@ -6,7 +6,7 @@ use App\Ssh\Provisioning\RequiresSudo;
 use App\Ssh\Tools\InvalidToolArguments;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 
-class UpdatePackageAction implements ActionTool, RequiresSudo
+class UpdatePackageAction implements ActionTool, RequiresSudo, Verifiable
 {
     use UsesSudo;
 
@@ -59,5 +59,10 @@ class UpdatePackageAction implements ActionTool, RequiresSudo
     public function sudoRules(): array
     {
         return [self::WRAPPER.' *'];
+    }
+
+    public function verification(array $arguments): ?Verification
+    {
+        return Verification::packageInstalled($arguments['package']);
     }
 }

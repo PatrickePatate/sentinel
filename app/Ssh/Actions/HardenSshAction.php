@@ -6,7 +6,7 @@ use App\Ssh\Provisioning\RequiresSudo;
 use App\Ssh\Tools\InvalidToolArguments;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 
-class HardenSshAction implements ActionTool, RequiresSudo
+class HardenSshAction implements ActionTool, RequiresSudo, Verifiable
 {
     use UsesSudo;
 
@@ -56,5 +56,22 @@ class HardenSshAction implements ActionTool, RequiresSudo
     public function sudoRules(): array
     {
         return [self::WRAPPER.' *'];
+    }
+
+    /** sshd -T prints the effective settings: what was asked must be what sshd now applies. */
+    public function verification(array $arguments): ?Verification
+    {
+        $expected = array_filter(['permitrootlogin' => $arguments['permit_root_login'], 'passwordauthentication' => $arguments['password_authentication']], fn ($v) => $v !== 'keep');
+        $expected = array_map(fn ($v) => $v === 'prohibit-password' ? ['prohibit-password', 'without-password'] : [$v], $expected);
+
+        return new Verification(
+            $this->sudo().'sshd -T 2>/dev/null | grep -Ei "^(permitrootlogin|passwordauthentication) "',
+            function ($r) use ($expected) {
+                $settings = collect(preg_split('/\R/', trim($r->output)))->mapWithKeys(fn ($line) => [strtolower(strtok($line, ' ')) => strtolower(trim((string) strtok('')))]);
+
+                return collect($expected)->every(fn ($values, $key) => in_array($settings->get($key), $values, true));
+            },
+            'sshd applies '.collect($expected)->map(fn ($v, $k) => "{$k} {$v[0]}")->implode(' and '),
+        );
     }
 }

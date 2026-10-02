@@ -74,17 +74,18 @@ it('holds an action that keeps being run, instead of repeating it forever', func
 
     foreach (range(1, 3) as $i) {
         sure();
-        expect(exec_($transport)->request($machine, 'start_crashed_service', ['service' => 'redis-server'], null, 'x'))->toBe('ok');
+        expect(exec_($transport)->request($machine, 'start_crashed_service', ['service' => 'redis-server'], null, 'x'))->toStartWith('ok');
     }
 
     sure();
     expect(exec_($transport)->request($machine, 'start_crashed_service', ['service' => 'redis-server'], null, 'x'))->toStartWith('PENDING_HUMAN_APPROVAL')
         ->and(PendingAction::first()->reason)->toContain('Flapping')
-        ->and($transport->commands)->toHaveCount(3);
+        // three runs of the action itself, each followed by its is-active check
+        ->and(collect($transport->commands)->reject(fn ($c) => str_contains($c, 'is-active')))->toHaveCount(3);
 
     // Another service is a different command: not affected.
     sure();
-    expect(exec_($transport)->request($machine, 'start_crashed_service', ['service' => 'nginx'], null, 'x'))->toBe('ok');
+    expect(exec_($transport)->request($machine, 'start_crashed_service', ['service' => 'nginx'], null, 'x'))->toStartWith('ok');
 });
 
 it('tells the agent what already ran lately', function () {
@@ -123,7 +124,7 @@ it('runs a trusted action without asking, but never a high-risk or unsafeguarded
     $machine = Machine::factory()->create(['autonomy_enabled' => false, 'trusted_actions' => ['rollback_web_config', 'restart_service', 'clean_apt_cache']]);
     config(['sentinel.actions.restartable_services' => ['nginx']]);
 
-    expect(exec_($transport)->request($machine, 'rollback_web_config', ['service' => 'nginx'], null, 'x'))->toBe('ok')
+    expect(exec_($transport)->request($machine, 'rollback_web_config', ['service' => 'nginx'], null, 'x'))->toBe("ok\nVERIFIED: the nginx configuration passes its test.")
         // trusted names without declared safeguards are ignored: they go through the normal rules
         ->and(exec_($transport)->request($machine, 'restart_service', ['service' => 'nginx'], null, 'x'))->toStartWith('PENDING_HUMAN_APPROVAL')
         ->and(exec_($transport)->request($machine, 'clean_apt_cache', [], null, 'x'))->toStartWith('PENDING_HUMAN_APPROVAL');

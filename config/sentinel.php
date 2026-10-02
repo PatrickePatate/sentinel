@@ -141,6 +141,8 @@ TXT,
         // The same command running this many times in 24 hours is held for a human instead of run again.
         'flap_threshold' => 3,
         'pending_ttl_hours' => 24,
+        // Wait before checking an action worked (a restarted service needs a moment to settle).
+        'verify_delay_seconds' => (int) env('SENTINEL_VERIFY_DELAY', 3),
     ],
 
     'fail2ban' => [

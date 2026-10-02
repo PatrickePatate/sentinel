@@ -7,7 +7,7 @@ use App\Ssh\Tools\InvalidToolArguments;
 use App\Ssh\Tools\WebConfigTestTool;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 
-class RollbackWebConfigAction implements ActionTool, HasSafeguards, RequiresSudo
+class RollbackWebConfigAction implements ActionTool, HasSafeguards, RequiresSudo, Verifiable
 {
     use UsesSudo;
 
@@ -50,5 +50,15 @@ class RollbackWebConfigAction implements ActionTool, HasSafeguards, RequiresSudo
     public function sudoRules(): array
     {
         return [WebConfigTestTool::WRAPPER.' *'];
+    }
+
+    public function verification(array $arguments): ?Verification
+    {
+        return new Verification(
+            $this->sudo().WebConfigTestTool::WRAPPER.' test '.escapeshellarg($arguments['service']).' 2>&1',
+            fn ($r) => $r->exitCode === 0,
+            "the {$arguments['service']} configuration passes its test",
+            null,
+        );
     }
 }

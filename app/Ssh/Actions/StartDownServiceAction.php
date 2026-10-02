@@ -6,7 +6,7 @@ use App\Ssh\Provisioning\RequiresSudo;
 use App\Ssh\Tools\InvalidToolArguments;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 
-class StartDownServiceAction implements ActionTool, HasSafeguards, RequiresSudo
+class StartDownServiceAction implements ActionTool, HasSafeguards, RequiresSudo, Verifiable
 {
     use UsesSudo;
 
@@ -54,5 +54,10 @@ class StartDownServiceAction implements ActionTool, HasSafeguards, RequiresSudo
     public function sudoRules(): array
     {
         return [self::WRAPPER.' *'];
+    }
+
+    public function verification(array $arguments): ?Verification
+    {
+        return Verification::unitActive($arguments['service']);
     }
 }

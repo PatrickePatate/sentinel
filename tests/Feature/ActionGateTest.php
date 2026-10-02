@@ -33,7 +33,8 @@ function recordingTransport(): object
         {
             $this->commands[] = $command;
 
-            return new CommandResult('done', 0);
+            // The post-action check asks whether the service is active.
+            return new CommandResult(str_contains($command, 'is-active') ? 'active' : 'done', 0);
         }
     };
 }
@@ -129,7 +130,7 @@ it('runs a pending action only after human approval', function () {
     $pending = PendingAction::first();
     $executor->approve($pending);
 
-    expect($transport->commands)->toBe(["systemctl restart -- 'nginx' 2>&1"])
+    expect($transport->commands)->toBe(["systemctl restart -- 'nginx' 2>&1", "systemctl is-active -- 'nginx' 2>&1"])
         ->and($pending->fresh()->status)->toBe('executed');
 });
 
@@ -328,7 +329,7 @@ it('lets moderate actions through the classifier only when the machine allows th
     $transport = recordingTransport();
     $machine = Machine::factory()->create(['autonomy_enabled' => true, 'autonomy_medium' => true]);
 
-    expect(actions($transport)->request($machine, 'restart_service', ['service' => 'nginx'], null, 'x'))->toBe('done');
+    expect(actions($transport)->request($machine, 'restart_service', ['service' => 'nginx'], null, 'x'))->toBe("done\nVERIFIED: nginx is active.");
 });
 
 it('ignores the moderate setting when autonomy itself is off', function () {
