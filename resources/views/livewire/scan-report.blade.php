@@ -71,7 +71,7 @@
                 </x-ui.card>
             @endif
 
-            <x-ui.card title="Steps" description="What the agent ran, as it happens" flush>
+            <x-ui.card title="Steps" description="What the agent ran, latest first" flush>
                 @forelse ($steps as $step)
                     <div wire:key="s{{ $step->id }}" class="flex items-start gap-3 border-b px-6 py-2.5 last:border-0">
                         <span @class(['mt-1.5 size-2 shrink-0 rounded-full', 'bg-success' => in_array($step->event, ['ok', 'action_executed']), 'bg-destructive' => in_array($step->event, ['failed', 'rejected', 'action_refused']), 'bg-warning' => in_array($step->event, ['action_proposed', 'action_pending']), 'bg-muted-foreground' => ! in_array($step->event, ['ok', 'action_executed', 'failed', 'rejected', 'action_refused', 'action_proposed', 'action_pending'])])></span>

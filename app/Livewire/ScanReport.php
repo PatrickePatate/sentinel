@@ -132,7 +132,7 @@ class ScanReport extends Component
 
         return view('livewire.scan-report', [
             'run' => $scan,
-            'steps' => Activity::where('log_name', 'ssh')->whereIn('properties->agent_run_id', $runIds)->whereNotNull('properties->command')->oldest('id')->get(),
+            'steps' => Activity::where('log_name', 'ssh')->whereIn('properties->agent_run_id', $runIds)->whereNotNull('properties->command')->latest('id')->get(),
             'active' => $scan->isActive() || $scan->followUps->contains(fn (AgentRun $turn) => $turn->isActive()),
             'changes' => $this->changes($scan),
         ])->title('Scan #'.$scan->id);
