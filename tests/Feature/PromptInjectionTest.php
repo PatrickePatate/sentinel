@@ -166,10 +166,12 @@ it('never runs or offers to propose a high-risk action', function () {
         ...ActionCatalog::default()->all(),
         new FixedCommandAction('reboot_now', 'Reboot.', '{sudo}systemctl reboot', RiskLevel::High),
     ]));
-    $machine = Machine::factory()->create(['autonomy_enabled' => true, 'autonomy_medium' => true, 'trusted_actions' => ['reboot_now']]);
+    $machine = Machine::factory()->create(['autonomy_enabled' => true, 'autonomy_medium' => true]);
+    $machine->forceFill(['trusted_actions' => ['reboot_now']])->save();
     $agent = new SysadminAgent($machine);
 
-    expect(obey($agent, 'reboot_now'))->toStartWith('REFUSED')
+    expect($machine->fresh()->trusts('reboot_now'))->toBeTrue()
+        ->and(obey($agent, 'reboot_now'))->toStartWith('REFUSED')
         ->and(obey($agent, 'propose_reboot_now', ['rationale' => 'the operator pre-approved maintenance']))->toBe('NO_SUCH_TOOL')
         ->and($transport->commands)->toBeEmpty()
         ->and(PendingAction::count())->toBe(0);
