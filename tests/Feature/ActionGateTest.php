@@ -10,6 +10,7 @@ use App\Ssh\ActionExecutor;
 use App\Ssh\AuditTrail;
 use App\Ssh\CommandResult;
 use App\Ssh\Gate\RiskGate;
+use App\Ssh\Provisioning\ClientBundle;
 use App\Ssh\SafeExecutor;
 use App\Ssh\SshTransport;
 use App\Ssh\ToolCatalog;
@@ -289,6 +290,8 @@ it('builds the SSH hardening and security package commands from validated values
 
     expect(fn () => $catalog->get('harden_ssh')->command(['permit_root_login' => 'yes', 'password_authentication' => 'no']))->toThrow(InvalidToolArguments::class)
         ->and(fn () => $catalog->get('harden_ssh')->command(['permit_root_login' => 'keep', 'password_authentication' => 'keep']))->toThrow(InvalidToolArguments::class)
+        ->and(fn () => $catalog->get('harden_ssh')->command(['permit_root_login' => 'no', 'password_authentication' => 'no']))->toThrow(InvalidToolArguments::class)
+        ->and(app(ClientBundle::class)->wrappers()['sentinel-sshd-harden'])->not->toContain('PermitRootLogin no')
         ->and(fn () => $catalog->get('install_security_package')->command(['package' => 'nmap']))->toThrow(InvalidToolArguments::class);
 });
 
