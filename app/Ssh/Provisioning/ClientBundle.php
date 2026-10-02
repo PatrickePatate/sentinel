@@ -24,6 +24,8 @@ class ClientBundle
         'sentinel-install-package',
         'sentinel-service-recover',
         'sentinel-web-config',
+        'sentinel-account-audit',
+        'sentinel-kernel-cleanup',
     ];
 
     public function __construct(private SudoersBuilder $sudoers, private BundleSigner $signer) {}

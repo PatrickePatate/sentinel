@@ -11,6 +11,8 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('sentinel:scan-due')->everyMinute()->withoutOverlapping()->onOneServer();
+Schedule::command('sentinel:collect-metrics')->cron('*/'.max(5, (int) config('sentinel.metrics.interval_minutes')).' * * * *')->withoutOverlapping()->onOneServer();
+Schedule::command('sentinel:run-scheduled-actions')->everyMinute()->withoutOverlapping()->onOneServer();
 Schedule::command('sentinel:check-sites')->everyFiveMinutes()->withoutOverlapping()->onOneServer();
 
 // An approved action whose worker died mid-run would stay "running" forever: close it, the audit log has the rest.
@@ -20,6 +22,9 @@ Schedule::call(fn () => PendingAction::where('status', 'running')->where('update
 
 // Plain-code checks that found nothing are not worth keeping for long.
 Schedule::call(fn () => AgentRun::where('provider', 'precheck')->where('created_at', '<', now()->subDays(3))->delete())->daily()->name('prune-prechecks');
+
+// A weekly look at the whole fleet, for whoever does not open the dashboard every day.
+Schedule::command('sentinel:digest')->weeklyOn(1, '08:00')->onOneServer();
 
 // Prices change rarely: a weekly look keeps the run cost estimates honest.
 Schedule::command('sentinel:pricing')->weekly()->onOneServer();

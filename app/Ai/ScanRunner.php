@@ -3,6 +3,7 @@
 namespace App\Ai;
 
 use App\Ai\Agents\SysadminAgent;
+use App\Findings\FindingTracker;
 use App\Models\AgentRun;
 use App\Models\Machine;
 use App\Support\Realtime;
@@ -140,8 +141,26 @@ class ScanRunner
             }
 
             $run->update(['status' => 'completed', 'report' => $text, 'progress' => null] + $this->usageColumns($usage, $provider, $model));
+
+            if ($scan) {
+                // Tracking findings is bookkeeping: it must never turn a completed scan into a failed one.
+                try {
+                    app(FindingTracker::class)->reconcile($run->fresh());
+                    $run->refresh();
+                } catch (Throwable $e) {
+                    report($e);
+                }
+            }
         } catch (Throwable $e) {
             $run->update(['status' => 'failed', 'report' => $e->getMessage(), 'progress' => null]);
+        }
+
+        if ($run->cost_usd !== null) {
+            try {
+                app(Budget::class)->check($machine);
+            } catch (Throwable $e) {
+                report($e);
+            }
         }
 
         Realtime::push('run', $run->id);

@@ -26,14 +26,59 @@ class Notifier
         // A scheduled web server check that leaves a component down reaches every scan channel, whatever its minimum severity.
         $urgent = $run->profile === 'webserver' && in_array($run->trigger, ['scheduled', 'site_down'], true) && $severity->atLeast(Severity::High);
 
+        if (! $failed && ! $urgent && $this->nothingChanged($run, $severity)) {
+            return;
+        }
+
+        if ($this->quiet($run->machine, 'scan report', $run)) {
+            return;
+        }
+
         $this->dispatch($run, fn () => NotificationChannel::where('enabled', true)->where('notify_scans', true)->get()
             ->filter(fn (NotificationChannel $c) => $urgent || $severity->atLeast($c->minSeverity())),
             new ScanReportNotification($run, $severity, $urgent));
     }
 
-    /** Tells every channel that takes scan notifications. */
-    public function machineAlert(Machine $machine, string $title, string $body, bool $urgent = true): void
+    /**
+     * A scan that only confirms what earlier scans already reported is not worth a message: nothing new, nothing worse.
+     * High and critical verdicts are always sent, so an ongoing serious problem keeps being reported.
+     */
+    private function nothingChanged(AgentRun $run, Severity $severity): bool
     {
+        $diff = $run->findings_diff;
+
+        return config('sentinel.notifications.only_changes', true)
+            && is_array($diff) && $diff['ongoing'] !== []
+            && $diff['new'] === [] && $diff['escalated'] === []
+            && ! $severity->atLeast(Severity::High);
+    }
+
+    /** Planned work or a maintenance window: the message is not sent, only logged. Approval requests are never muted. */
+    private function quiet(Machine $machine, string $what, ?AgentRun $run = null): bool
+    {
+        if (! $machine->isQuiet()) {
+            return false;
+        }
+
+        $this->audit->record($machine, $run, 'notification_suppressed', $what, ['reason' => $machine->underPlannedWork() ? 'planned work' : 'maintenance window']);
+
+        return true;
+    }
+
+    /** @param array<string, mixed> $digest The weekly summary, for every channel that takes scan notifications. */
+    public function digest(array $digest): void
+    {
+        $this->dispatch(null, fn () => NotificationChannel::where('enabled', true)->where('notify_scans', true)->get(), new FleetDigestNotification($digest));
+    }
+
+    /** Tells every channel that takes scan notifications. */
+    /** @param bool $evenWhenQuiet For news a maintenance window must not hide, e.g. an action that ran in it and did not work. */
+    public function machineAlert(Machine $machine, string $title, string $body, bool $urgent = true, bool $evenWhenQuiet = false): void
+    {
+        if (! $evenWhenQuiet && $this->quiet($machine, $title)) {
+            return;
+        }
+
         $this->dispatch(null, fn () => NotificationChannel::where('enabled', true)->where('notify_scans', true)->get(), new MachineAlertNotification($machine, $title, $body, $urgent), $machine);
     }
 

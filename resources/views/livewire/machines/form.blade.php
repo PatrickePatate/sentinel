@@ -34,6 +34,24 @@
                 </div>
                 <x-ui.switch wire:model="autonomy_enabled" label="Let the agent run low-risk corrective actions on its own" description="Only after a second classifier model agrees. High risk is never run." />
                 @if ($autonomy_enabled)<x-ui.switch wire:model="autonomy_medium" label="Also allow moderate-risk actions" description="Moderate actions (e.g. restarting a service) go through the same classifier checks instead of always waiting for you. Off by default." class="ml-12" />@endif
+                <x-ui.field label="Monthly model budget (USD)" name="monthly_budget_usd" hint="Optional. Past it, routine scheduled AI scans of this machine pause until next month; manual scans and checks of detected problems still run. See the Costs page.">
+                    <x-ui.input wire:model="monthly_budget_usd" inputmode="decimal" placeholder="No limit" class="w-40" />
+                </x-ui.field>
+                <x-ui.switch wire:model="two_person_approval" label="Require two people to approve actions" description="An action held for approval runs only once two different dashboard users approved it (Telegram and command line approvals are refused on this machine). Autonomous low-risk actions are not affected." />
+                <details class="rounded-md border p-4" @if ($maintenance_days) open @endif>
+                    <summary class="cursor-pointer text-sm font-medium">Maintenance window</summary>
+                    <p class="mt-2 text-xs text-muted-foreground">A weekly slot ({{ config('app.timezone') }}) when approved actions may run: "Approve for the window" on a pending action runs it at the next one. Scan and machine alerts are muted during the window (approvals and failed action checks are not). No day picked: no window.</p>
+                    <div class="mt-4 flex flex-wrap gap-3">
+                        @foreach ([1 => 'Mon', 2 => 'Tue', 3 => 'Wed', 4 => 'Thu', 5 => 'Fri', 6 => 'Sat', 7 => 'Sun'] as $day => $label)
+                            <label class="flex items-center gap-1.5 text-sm"><input type="checkbox" class="size-4 rounded border-input" wire:model="maintenance_days" value="{{ $day }}"> {{ $label }}</label>
+                        @endforeach
+                    </div>
+                    @error('maintenance_days.*')<p class="mt-1 text-xs text-destructive">{{ $message }}</p>@enderror
+                    <div class="mt-4 grid gap-4 sm:grid-cols-2">
+                        <x-ui.field label="Starts at" name="maintenance_start"><x-ui.input type="time" wire:model="maintenance_start" /></x-ui.field>
+                        <x-ui.field label="Lasts" name="maintenance_minutes"><x-ui.select wire:model="maintenance_minutes" :options="\App\Livewire\Machines\Form::WINDOW_LENGTHS" /></x-ui.field>
+                    </div>
+                </details>
                 <details class="rounded-md border p-4" @if (filled($gate_max_destructive) || filled($gate_min_reversible) || filled($gate_max_actions)) open @endif>
                     <summary class="cursor-pointer text-sm font-medium">Risk gate tuning for this machine</summary>
                     <p class="mt-2 text-xs text-muted-foreground">Leave empty to use the global defaults ({{ config('sentinel.gate.max_destructive') }} / {{ config('sentinel.gate.min_reversible') }} / {{ config('sentinel.gate.max_autonomous_actions_per_run') }}). Lower "destructive" and higher "reversible" make the gate stricter. The limits are bounded: this cannot switch the gate off.</p>

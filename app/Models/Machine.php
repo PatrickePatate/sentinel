@@ -7,18 +7,32 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use phpseclib3\Crypt\EC;
 use phpseclib3\Crypt\PublicKeyLoader;
 use RuntimeException;
 
+/**
+ * @property list<int|string>|null $maintenance_days
+ * @property Carbon|null $maintenance_until
+ * @property Carbon|null $revoked_at
+ * @property Carbon|null $last_scan_at
+ * @property Carbon|null $last_webserver_scan_at
+ * @property Carbon|null $provision_token_expires_at
+ * @property Carbon|null $provisioned_at
+ * @property Carbon|null $client_checked_at
+ * @property list<string>|null $trusted_actions
+ * @property bool $two_person_approval
+ * @property float|null $monthly_budget_usd
+ */
 #[Hidden(['private_key', 'passphrase', 'provision_token'])]
 class Machine extends Model
 {
     use HasFactory;
 
     /** @var list<string> */
-    protected $fillable = ['name', 'host', 'port', 'username', 'private_key', 'passphrase', 'host_key_fingerprint', 'environment', 'autonomy_enabled', 'autonomy_medium', 'scan_interval_minutes', 'webserver_interval_minutes', 'webserver_enabled', 'webserver_full_check_hours', 'memory', 'gate_max_destructive', 'gate_min_reversible', 'gate_max_actions'];
+    protected $fillable = ['name', 'host', 'port', 'username', 'private_key', 'passphrase', 'host_key_fingerprint', 'environment', 'autonomy_enabled', 'autonomy_medium', 'scan_interval_minutes', 'webserver_interval_minutes', 'webserver_enabled', 'webserver_full_check_hours', 'memory', 'gate_max_destructive', 'gate_min_reversible', 'gate_max_actions', 'maintenance_days', 'maintenance_start', 'maintenance_minutes', 'maintenance_until', 'two_person_approval', 'monthly_budget_usd'];
 
     protected function casts(): array
     {
@@ -37,6 +51,10 @@ class Machine extends Model
             'webserver_enabled' => 'boolean',
             'autonomy_enabled' => 'boolean',
             'autonomy_medium' => 'boolean',
+            'maintenance_days' => 'array',
+            'maintenance_until' => 'datetime',
+            'two_person_approval' => 'boolean',
+            'monthly_budget_usd' => 'float',
         ];
     }
 
@@ -141,30 +159,117 @@ class Machine extends Model
     /** @return array{percent: float, since: CarbonInterface, from: float, per_day: float, days_left: ?int}|null */
     public function diskTrend(): ?array
     {
-        $samples = MachineMetric::where('machine_id', $this->id)->where('name', 'disk_root_percent')
-            ->where('recorded_at', '>=', now()->subDays(14))->orderBy('recorded_at')->get();
+        return $this->metricTrend('disk_root_percent', 14);
+    }
+
+    /**
+     * Where a metric stands and where it is heading: a least-squares line over the window, so one odd sample
+     * does not swing the forecast. days_left is when a percentage would reach 100 at this pace.
+     *
+     * @return array{percent: float, since: CarbonInterface, from: float, per_day: float, days_left: ?int}|null
+     */
+    public function metricTrend(string $name, int $days = 7): ?array
+    {
+        $samples = MachineMetric::where('machine_id', $this->id)->where('name', $name)
+            ->where('recorded_at', '>=', now()->subDays($days))->orderBy('recorded_at')->get();
 
         if ($samples->count() < 2) {
             return null;
         }
 
-        [$first, $last] = [$samples->first(), $samples->last()];
-        $days = max($first->recorded_at->diffInSeconds($last->recorded_at) / 86400, 0.01);
-        $perDay = ($last->value - $first->value) / $days;
+        $start = $samples->first()->recorded_at;
+        $points = $samples->map(fn (MachineMetric $m) => [$start->diffInSeconds($m->recorded_at) / 86400, $m->value]);
+        $meanX = $points->avg(0);
+        $meanY = $points->avg(1);
+        $variance = $points->sum(fn ($p) => ($p[0] - $meanX) ** 2);
+        $perDay = $variance > 0 ? $points->sum(fn ($p) => ($p[0] - $meanX) * ($p[1] - $meanY)) / $variance : 0.0;
+        $last = $samples->last()->value;
 
-        return ['percent' => $last->value, 'since' => $first->recorded_at, 'from' => $first->value, 'per_day' => $perDay, 'days_left' => $perDay > 0.05 ? (int) ceil((100 - $last->value) / $perDay) : null];
+        return [
+            'percent' => $last,
+            'since' => $start,
+            'from' => $samples->first()->value,
+            'per_day' => $perDay,
+            'days_left' => $perDay > 0.05 && $last < 100 ? (int) ceil((100 - $last) / $perDay) : null,
+        ];
     }
 
+    /** @return array<string, float> Latest value of each metric. */
+    public function latestMetrics(): array
+    {
+        return MachineMetric::where('machine_id', $this->id)->where('recorded_at', '>=', now()->subDay())
+            ->orderBy('recorded_at')->get()->mapWithKeys(fn (MachineMetric $m) => [$m->name => $m->value])->all();
+    }
+
+    public function hasMaintenanceWindow(): bool
+    {
+        return filled($this->maintenance_days) && preg_match('/^\d{2}:\d{2}$/', (string) $this->maintenance_start) && $this->maintenance_minutes > 0;
+    }
+
+    /**
+     * The maintenance window in progress or the next one, as [start, end], in the application timezone.
+     *
+     * @return array{0: CarbonInterface, 1: CarbonInterface}|null
+     */
+    public function maintenanceWindow(?CarbonInterface $at = null): ?array
+    {
+        if (! $this->hasMaintenanceWindow()) {
+            return null;
+        }
+
+        $at ??= now();
+        [$hour, $minute] = array_map('intval', explode(':', $this->maintenance_start));
+
+        // From yesterday (a window that started before midnight may still be open) up to a week ahead.
+        foreach (range(-1, 7) as $offset) {
+            $start = $at->copy()->startOfDay()->addDays($offset)->setTime($hour, $minute);
+            $end = $start->copy()->addMinutes($this->maintenance_minutes);
+
+            if (in_array($start->isoWeekday(), array_map('intval', $this->maintenance_days), true) && $end->gt($at)) {
+                return [$start, $end];
+            }
+        }
+
+        return null;
+    }
+
+    public function inMaintenanceWindow(?CarbonInterface $at = null): bool
+    {
+        $window = $this->maintenanceWindow($at);
+
+        return $window !== null && $window[0]->lte($at ?? now());
+    }
+
+    public function underPlannedWork(): bool
+    {
+        return $this->maintenance_until?->isFuture() ?? false;
+    }
+
+    /** During planned work or a maintenance window, things breaking for a moment is expected: alerts stay quiet. */
+    public function isQuiet(): bool
+    {
+        return $this->underPlannedWork() || $this->inMaintenanceWindow();
+    }
+
+    /** @return HasMany<SiteCheck, $this> */
     public function siteChecks(): HasMany
     {
         return $this->hasMany(SiteCheck::class);
     }
 
+    /** @return HasMany<MemorySuggestion, $this> */
     public function memorySuggestions(): HasMany
     {
         return $this->hasMany(MemorySuggestion::class);
     }
 
+    /** @return HasMany<Finding, $this> */
+    public function findings(): HasMany
+    {
+        return $this->hasMany(Finding::class);
+    }
+
+    /** @return HasMany<AgentRun, $this> */
     public function agentRuns(): HasMany
     {
         return $this->hasMany(AgentRun::class);

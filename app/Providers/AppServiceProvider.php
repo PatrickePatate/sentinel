@@ -32,7 +32,9 @@ class AppServiceProvider extends ServiceProvider
             throw new RuntimeException('SENTINEL_TRANSPORT=fake is forbidden in production: it would report a simulated machine as real.');
         }
 
-        // The dashboard, its Livewire endpoint and the chat are for administrators only.
-        Gate::define('admin', fn (User $user) => $user->is_admin);
+        // Viewers see the dashboard, approvers also act on it (actions, scans, chat, issues), admins configure it.
+        Gate::define('view', fn (User $user) => $user->hasRole('viewer'));
+        Gate::define('approve', fn (User $user) => $user->hasRole('approver'));
+        Gate::define('admin', fn (User $user) => $user->hasRole('admin'));
     }
 }

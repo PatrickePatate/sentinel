@@ -56,7 +56,7 @@ trait StartsScans
 
         RateLimiter::hit($key, 3600);
 
-        $run = $runner->queue($machine, $this->objective, 'manual', $this->profile, $this->allowActions && ! $machine->autonomy_enabled);
+        $run = $runner->queue($machine, $this->objective, 'manual', $this->profile, $this->allowActions && ! $machine->autonomy_enabled && auth()->user()->can('admin'));
         RunScan::dispatch($machine->id, $this->objective, auth()->id(), 'manual', $run->id, $this->profile);
 
         return $this->redirectRoute('scans.show', $run, navigate: true);

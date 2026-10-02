@@ -2,7 +2,7 @@
 
 namespace App\Livewire;
 
-use App\Livewire\Concerns\AuthorizesAdmin;
+use App\Livewire\Concerns\AuthorizesAccess;
 use App\Livewire\Concerns\ListensToRealtime;
 use App\Models\PendingAction;
 use Livewire\Component;
@@ -10,7 +10,7 @@ use Livewire\Component;
 /** Sidebar counter of actions waiting for a human. Polls, and tells the admin when a new one shows up. */
 class PendingBadge extends Component
 {
-    use AuthorizesAdmin;
+    use AuthorizesAccess;
     use ListensToRealtime;
 
     public ?int $known = null;

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Ai\Budget;
 use App\Ai\ScanRunner;
 use App\Jobs\RunScan;
 use App\Models\AgentRun;
@@ -26,12 +27,20 @@ class ScanDueMachines extends Command
                 ->when($settings['enabled_column'] ?? null, fn ($q, $column) => $q->where($column, true))
                 ->whereNotNull($interval)->where($interval, '>', 0)
                 ->whereNull('revoked_at')->whereNotNull('host_key_fingerprint')
+                // Planned work: someone is changing the machine on purpose, so scans would only report the work in progress.
+                ->where(fn ($q) => $q->whereNull('maintenance_until')->orWhere('maintenance_until', '<=', now()))
                 ->get()
                 ->each(function (Machine $machine) use (&$queued, $profile, $settings, $interval, $last) {
                     $lastAt = $machine->{$last};
                     $due = $lastAt === null || $lastAt->copy()->addMinutes($machine->{$interval})->lte(now());
 
                     if (! $due || $this->alreadyRunning($machine)) {
+                        return;
+                    }
+
+                    // Over budget, routine audits wait for next month. Web server checks still run: their plain pre-check
+                    // costs nothing, and only a problem it finds calls the model (see RunScan).
+                    if ($profile === 'audit' && app(Budget::class)->exceeded($machine)) {
                         return;
                     }
 

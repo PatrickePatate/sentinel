@@ -44,11 +44,15 @@
         </div>
 
         <div class="border-t p-4">
+            @can('approve')
             <form wire:submit="send" class="flex gap-2">
                 <x-ui.input wire:model="message" wire:loading.attr="disabled" wire:target="send" placeholder="Message the agent…" maxlength="2000" autocomplete="off" />
                 <x-ui.button type="submit" size="icon" wire:loading.attr="disabled" wire:target="send" aria-label="Send">@svg('lucide-send-horizontal')</x-ui.button>
             </form>
             @error('message')<p class="mt-2 text-xs text-destructive">{{ $message }}</p>@enderror
+            @else
+            <p class="text-center text-sm text-muted-foreground">Your role can read this conversation, not write to it.</p>
+            @endcan
             <p class="mt-2 text-center text-[11px] text-muted-foreground">The agent can make mistakes. Every command is audited.</p>
         </div>
     </div>

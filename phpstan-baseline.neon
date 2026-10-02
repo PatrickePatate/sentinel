@@ -1,0 +1,85 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Strict comparison using \!\=\= between non\-empty\-list\<string\> and array\{\} will always evaluate to true\.$#'
+			identifier: notIdentical.alwaysTrue
+			count: 1
+			path: app/Ai/PricingFetcher.php
+
+		-
+			message: '#^Call to an undefined method phpseclib3\\Crypt\\Common\\AsymmetricKey\:\:getPublicKey\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Console/Commands/CheckMachine.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\PendingAction\:\:\$n\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Livewire/Actions/Index.php
+
+		-
+			message: '#^Offset ''bot_token'' on array\{\}\|string on left side of \?\? does not exist\.$#'
+			identifier: nullCoalesce.offset
+			count: 2
+			path: app/Livewire/Channels/Form.php
+
+		-
+			message: '#^Offset ''webhook_secret'' on array\{\}\|string on left side of \?\? does not exist\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: app/Livewire/Channels/Form.php
+
+		-
+			message: '#^Call to an undefined method phpseclib3\\Crypt\\Common\\AsymmetricKey\:\:getPublicKey\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Models/Machine.php
+
+		-
+			message: '#^Offset string on array\{\}\|string on left side of \?\? does not exist\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: app/Models/NotificationChannel.php
+
+		-
+			message: '#^Cannot call method toDateString\(\) on string\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: app/Monitoring/SiteMonitor.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Notifications\\Notification\:\:toTelegram\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Notifications/Channels/TelegramChannel.php
+
+		-
+			message: '#^Cannot assign offset ''webhook_secret'' to string\.$#'
+			identifier: offsetAssign.dimType
+			count: 1
+			path: app/Notifications/Channels/TelegramWebhook.php
+
+		-
+			message: '#^Offset ''webhook_secret'' on string on left side of \?\? does not exist\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: app/Notifications/Channels/TelegramWebhook.php
+
+		-
+			message: '#^Access to an undefined property Laravel\\Ai\\Responses\\Data\\Answer\:\:\$choice\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Ssh/Gate/RiskGate.php
+
+		-
+			message: '#^Access to an undefined property Laravel\\Ai\\Responses\\Data\\Answer\:\:\$probability\.$#'
+			identifier: property.notFound
+			count: 3
+			path: app/Ssh/Gate/RiskGate.php
+
+		-
+			message: '#^Call to an undefined method Laravel\\Ai\\Responses\\Data\\Answer\:\:probabilityOf\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: app/Ssh/Gate/RiskGate.php

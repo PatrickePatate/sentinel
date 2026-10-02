@@ -10,7 +10,7 @@ use Illuminate\Contracts\JsonSchema\JsonSchema;
  * A systemctl verb on a unit from an explicit allowlist. The allowlist is also what
  * feeds the per-unit sudoers rules, so no wildcard is ever needed.
  */
-abstract class SystemctlServiceAction implements ActionTool, RequiresSudo
+abstract class SystemctlServiceAction implements ActionTool, RequiresSudo, Verifiable
 {
     use UsesSudo;
 
@@ -44,5 +44,10 @@ abstract class SystemctlServiceAction implements ActionTool, RequiresSudo
     protected static function list(string $key): array
     {
         return array_values(array_filter(config("sentinel.actions.{$key}", [])));
+    }
+
+    public function verification(array $arguments): ?Verification
+    {
+        return Verification::unitActive($arguments['service']);
     }
 }

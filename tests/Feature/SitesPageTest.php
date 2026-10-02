@@ -61,7 +61,7 @@ it('shows a down site, toggles the analysis and removes the site', function () {
 
 it('is for admins only', function () {
     auth()->logout();
-    $this->actingAs(User::factory()->create(['is_admin' => false]));
+    $this->actingAs(User::factory()->create());
 
     $this->get(route('sites.index'))->assertForbidden();
 });

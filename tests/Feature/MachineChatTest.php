@@ -30,10 +30,10 @@ it('keeps non-admin users out of the dashboard and refuses their Livewire calls'
     Livewire::test(MachineChat::class, ['machine' => $machine])->assertForbidden();
 });
 
-it('never lets is_admin be mass assigned', function () {
-    $user = User::create(['name' => 'x', 'email' => 'x@example.org', 'password' => 'secret', 'is_admin' => true]);
+it('never lets the role be mass assigned', function () {
+    $user = User::create(['name' => 'x', 'email' => 'x@example.org', 'password' => 'secret', 'role' => 'admin']);
 
-    expect($user->fresh()->is_admin)->toBeFalse();
+    expect($user->fresh()->role)->toBeNull();
 });
 
 it('embeds the chat in a tab of the machine page', function () {

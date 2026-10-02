@@ -10,6 +10,7 @@ class MemorySuggestion extends Model
     /** @var list<string> */
     protected $fillable = ['machine_id', 'agent_run_id', 'note', 'status'];
 
+    /** @return BelongsTo<Machine, $this> */
     public function machine(): BelongsTo
     {
         return $this->belongsTo(Machine::class);

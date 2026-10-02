@@ -22,6 +22,13 @@ It is built with Laravel 13, the Laravel AI SDK, Livewire 4, Alpine and Tailwind
   - **High risk**: never executed by the agent.
 - **Approvals anywhere.** Pending actions can be approved or rejected in the dashboard, by mail, from Telegram buttons, or with `php artisan sentinel:pending`.
 - **Full audit trail.** Every command, its output and every decision is logged.
+- **Issues across scans.** Each problem a scan finds is tracked by key: new, worse, still open or resolved by a later scan. The Issues page lets you acknowledge, mute (7/30/90 days), mark fixed or reopen them, each scan page shows what changed since the previous one, and a scan that only repeats known issues below high is not notified again.
+- **Health metrics and trends.** Disk, inodes, memory, swap, load and pending (security) updates are sampled every 15 minutes with one read-only command. The machine page shows sparklines; a filesystem nearly full or due to fill within a week raises an alert.
+- **Fleet view and weekly digest.** The Fleet page lists every machine worst first (open issues, health, updates, reboots); `sentinel:digest` mails the weekly summary every Monday.
+- **Checked actions.** Service, web configuration, SSH hardening, package and kernel actions are followed by a read-only check that they had their effect. A failed check alerts you, and a broken web configuration reload is rolled back at once.
+- **Maintenance windows.** A weekly window per machine: "Approve for the window" runs a pending action at its start. Planned work (1/4/12 h) and the window itself mute scan and machine alerts.
+- **Roles and two-factor authentication.** Viewer, approver or admin; TOTP is required at the first login (with recovery codes). A machine can require two different people to approve its actions.
+- **Budgets and costs.** A monthly budget overall and per machine (alerts at 80% and 100%, routine AI scans pause past it), and a Costs page by machine, kind of run and model. Scheduled audits skip the AI call when the machine state has not changed since the last AI audit, and a serious verdict from the cheaper scheduled model is checked again by the main one.
 
 ## Security model
 
@@ -32,13 +39,13 @@ Sentinel is designed so that a confused or manipulated model can't damage a serv
 - **Source IP pinning.** The deployed key can be restricted to Sentinel's IPs (`SENTINEL_SOURCE_IPS`, IPv4/IPv6/CIDR).
 - **Host key pinning.** Sentinel refuses to connect when the server's host key doesn't match the pinned fingerprint. With the one-line provisioning, the machine reports its own fingerprints over TLS and Sentinel pins the one it sees, so there is nothing to copy by hand.
 - **Validated updates.** Wrappers and sudo policy can be updated over SSH (human-triggered only). The root-owned updater on the machine only accepts a fixed set of command shapes; anything wider needs the provisioning command run again as root.
-- **Tool output is untrusted.** Tool output is never treated as instructions, and it can't lower the severity of a finding.
+- **Tool output is untrusted.** Tool output is never treated as instructions. A scan's verdict can't be lower than the worst finding it recorded, and `tests/Feature/PromptInjectionTest.php` checks that an agent that obeys a hostile log still cannot get past the catalogs and the gate.
 - **Deterministic rules come first.** The model can escalate an action's risk, but it can never unlock one.
 - **Revocation.** `sentinel:revoke` disables a machine immediately. `--purge` removes the remote user and files.
 
 ## Requirements
 
-- PHP 8.3+ with Composer
+- PHP 8.4+ with Composer
 - Node.js + npm (to build frontend assets)
 - A database (SQLite works out of the box; MySQL/PostgreSQL are supported)
 - An API key for an LLM provider (OpenAI, OpenRouter, or any provider from `config/ai.php`)
@@ -83,6 +90,13 @@ The main `.env` settings (see `.env.example` for the full list):
 | `SENTINEL_RESTARTABLE_SERVICES` | Services the agent may restart |
 | `SENTINEL_RELOADABLE_SERVICES` | Services the agent may reload |
 | `SENTINEL_UPGRADABLE_PACKAGES` | Packages the agent may upgrade |
+| `SENTINEL_MONTHLY_BUDGET` | Monthly model budget in USD for all machines (empty: none) |
+| `SENTINEL_ESCALATE_SEVERITY` | Verdict of the cheaper scheduled model that the main model checks again (`high` by default, empty: never) |
+| `SENTINEL_SKIP_UNCHANGED` | Skip the AI in scheduled audits when the machine state is unchanged (default on) |
+| `SENTINEL_NOTIFY_ONLY_CHANGES` | Do not notify scans that only repeat known issues below high (default on) |
+| `SENTINEL_METRICS_INTERVAL` | Minutes between health samples (default 15) |
+| `SENTINEL_VERIFY_DELAY` | Seconds to wait before checking that an action worked (default 3) |
+| `SENTINEL_REQUIRE_2FA` | Require two-factor authentication for every dashboard user (default on) |
 
 **Notifications:** mail uses the usual `MAIL_*` settings. Telegram needs a public HTTPS `APP_URL`. Register the webhook from the channel in the back office, or with `php artisan sentinel:telegram-webhook <channel-id>`.
 
@@ -139,7 +153,7 @@ Updates go over the existing SSH access, through a root-owned updater installed 
 
 | Command | Description |
 | --- | --- |
-| `sentinel:admin {email}` | Create or promote an admin user |
+| `sentinel:admin {email}` | Create a user (`--role=viewer\|approver\|admin`, admin by default) |
 | `sentinel:provision {machine}` | Print or write the provisioning script (`--sudoers` for the policy only, `--one-liner` for the `curl \| sudo bash` command) |
 | `sentinel:update {machine?}` | Check or update the client bundle on machines (`--all`, `--check`) |
 | `sentinel:pin-host-key {machine}` | Pin the server's SSH host key by hand (the one-liner does it for you) |
@@ -150,12 +164,16 @@ Updates go over the existing SSH access, through a root-owned updater installed 
 | `sentinel:pending {id?}` | Review, approve or `--reject` pending actions |
 | `sentinel:revoke {machine}` | Revoke access (`--purge` to clean the server, `--lift` to undo) |
 | `sentinel:telegram-webhook {channel}` | Register a Telegram webhook |
+| `sentinel:collect-metrics {machine?}` | Sample health metrics and alert on trends (scheduled every 15 minutes) |
+| `sentinel:run-scheduled-actions` | Run actions approved for a maintenance window that has started (scheduled every minute) |
+| `sentinel:digest` | Send the fleet digest (scheduled Mondays at 08:00) |
 
 ## Development
 
 ```bash
-php artisan test      # Pest test suite
-vendor/bin/pint       # code style
+php artisan test                                  # Pest test suite
+vendor/bin/pint                                   # code style
+vendor/bin/phpstan analyse --memory-limit=1G      # Larastan (level 5, with a baseline)
 ```
 
 Set `SENTINEL_TRANSPORT=fake` to develop without real servers.

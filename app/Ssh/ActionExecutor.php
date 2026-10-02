@@ -6,11 +6,14 @@ use App\Models\AgentRun;
 use App\Models\Machine;
 use App\Models\PendingAction;
 use App\Notifications\Notifier;
+use App\Ssh\Actions\HasSafeguards;
 use App\Ssh\Actions\RiskLevel;
+use App\Ssh\Actions\Verifiable;
 use App\Ssh\Gate\GateVerdict;
 use App\Ssh\Gate\RiskGate;
 use App\Ssh\Tools\InvalidToolArguments;
 use App\Support\Realtime;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use Spatie\Activitylog\Models\Activity;
 use Throwable;
@@ -112,7 +115,7 @@ class ActionExecutor
         }
 
         // The same fix proposed twice (or by two scans) is one decision for the human.
-        $existing = PendingAction::where('machine_id', $machine->id)->where('status', 'pending')->where('command', $command)->first();
+        $existing = PendingAction::where('machine_id', $machine->id)->whereIn('status', ['pending', 'scheduled'])->where('command', $command)->first();
 
         if ($existing) {
             return "ALREADY_PENDING (#{$existing->id}): this exact action is already waiting for approval.";
@@ -143,9 +146,14 @@ class ActionExecutor
      * reviewed; the pending -> running transition is atomic so it can only run once.
      */
     /** @param array<string, mixed> $context Extra audit properties (e.g. who approved, through which channel). */
-    public function approve(PendingAction $pending, array $context = []): string
+    public function approve(PendingAction $pending, array $context = [], string $from = 'pending'): string
     {
-        $this->claim($pending);
+        // A scheduled action already collected its approvals when it was scheduled.
+        if ($from === 'pending' && ($waiting = $this->awaitSecondApproval($pending, $context)) !== null) {
+            return $waiting;
+        }
+
+        $this->claim($pending, 'running', $from);
 
         $machine = $pending->machine;
 
@@ -165,17 +173,104 @@ class ActionExecutor
             return 'ERROR: '.$message;
         }
 
-        $output = $this->run($machine, $pending->agentRun, $pending->action, $command, ['approved_pending_action_id' => $pending->id] + $context, 'action_approved');
-        $pending->update(['status' => str_starts_with($output, 'ERROR') ? 'failed' : 'executed', 'output' => $output, 'decided_at' => now()]);
+        $output = $this->run($machine, $pending->agentRun, $pending->action, $command, ['approved_pending_action_id' => $pending->id, 'arguments' => $pending->arguments ?? []] + $context, 'action_approved');
+        $pending->update(['status' => str_starts_with($output, 'ERROR') || str_contains($output, "\nVERIFICATION FAILED") ? 'failed' : 'executed', 'output' => $output, 'decided_at' => now()]);
         Realtime::push('actions');
 
         return $output;
     }
 
+    /**
+     * Approves an action to run at the start of the machine's next maintenance window instead of now. When it runs it
+     * goes through approve(): the command is derived again and must still be the one that was reviewed.
+     *
+     * @param  array<string, mixed>  $context
+     */
+    public function schedule(PendingAction $pending, array $context = []): ?string
+    {
+        $window = $pending->machine->maintenanceWindow();
+        abort_unless($window !== null, 422, 'This machine has no maintenance window.');
+
+        if (($waiting = $this->awaitSecondApproval($pending, $context)) !== null) {
+            return $waiting;
+        }
+
+        $this->claim($pending, 'scheduled');
+        $pending->update(['run_after' => $window[0]]);
+        $this->audit->record($pending->machine, $pending->agentRun, 'action_scheduled', $pending->action, ['pending_action_id' => $pending->id, 'run_after' => $window[0]->toIso8601String()] + $context);
+        Realtime::push('actions');
+
+        return null;
+    }
+
+    /**
+     * On a machine that requires two people, the first approval is only recorded: null means "go ahead", otherwise the
+     * message says what is still missing. Both must be dashboard users, and different ones: a Telegram or command line
+     * approval is not tied to a Sentinel account, so the same person could count twice.
+     *
+     * @param  array<string, mixed>  $context
+     */
+    private function awaitSecondApproval(PendingAction $pending, array $context): ?string
+    {
+        if (! $pending->machine->two_person_approval) {
+            return null;
+        }
+
+        $user = auth()->user();
+
+        if (! $user || isset($context['via'])) {
+            $this->audit->record($pending->machine, $pending->agentRun, 'action_approval_denied', $pending->action, ['pending_action_id' => $pending->id, 'reason' => 'two-person approval needs dashboard users'] + $context);
+
+            return 'ERROR: this machine needs two approvals from different people in the dashboard. Approve it there.';
+        }
+
+        return DB::transaction(function () use ($pending, $user) {
+            $approvals = PendingAction::whereKey($pending->id)->lockForUpdate()->value('approvals');
+            $approvals = is_string($approvals) ? json_decode($approvals, true) : ($approvals ?? []);
+
+            if (collect($approvals)->contains('user_id', $user->id)) {
+                return 'WAITING: you already approved it; a second person has to approve it too.';
+            }
+
+            if ($approvals !== []) {
+                return null;
+            }
+
+            $pending->update(['approvals' => [['user_id' => $user->id, 'name' => $user->name, 'at' => now()->toIso8601String()]]]);
+            $this->audit->record($pending->machine, $pending->agentRun, 'action_first_approval', $pending->action, ['pending_action_id' => $pending->id]);
+            Realtime::push('actions');
+
+            return 'WAITING: first approval recorded; a second person has to approve it before it runs.';
+        });
+    }
+
+    /** Runs the scheduled actions whose window has come. One whose window was missed (scheduler down) waits for the next one. */
+    public function runScheduled(): int
+    {
+        $ran = 0;
+
+        foreach (PendingAction::with('machine')->where('status', 'scheduled')->where('run_after', '<=', now())->get() as $pending) {
+            if (! $pending->machine->inMaintenanceWindow()) {
+                $pending->update(['run_after' => $pending->machine->maintenanceWindow()[0] ?? now()->addDay()]);
+
+                continue;
+            }
+
+            try {
+                $this->approve($pending, ['scheduled' => true], from: 'scheduled');
+                $ran++;
+            } catch (Throwable $e) {
+                report($e);
+            }
+        }
+
+        return $ran;
+    }
+
     /** @param array<string, mixed> $context */
     public function reject(PendingAction $pending, array $context = []): void
     {
-        $this->claim($pending, 'rejected');
+        $this->claim($pending, 'rejected', $pending->status === 'scheduled' ? 'scheduled' : 'pending');
 
         $this->audit->record($pending->machine, null, 'action_rejected', $pending->action, ['pending_action_id' => $pending->id] + $context);
         Realtime::push('actions');
@@ -185,14 +280,15 @@ class ActionExecutor
      * Atomically moves a pending action out of "pending": a double click or two admins
      * at once cannot both win. Expired requests are closed instead of run.
      */
-    private function claim(PendingAction $pending, string $to = 'running'): void
+    private function claim(PendingAction $pending, string $to = 'running', string $from = 'pending'): void
     {
         $ttl = config('sentinel.gate.pending_ttl_hours');
 
+        // A request nobody answered expires; one a human approved for the window does not.
         PendingAction::whereKey($pending->id)->where('status', 'pending')->where('created_at', '<', now()->subHours($ttl))
             ->update(['status' => 'expired', 'decided_at' => now()]);
 
-        $claimed = PendingAction::whereKey($pending->id)->where('status', 'pending')
+        $claimed = PendingAction::whereKey($pending->id)->where('status', $from)
             ->update(['status' => $to, 'decided_at' => $to === 'rejected' ? now() : null]);
 
         abort_unless($claimed === 1, 409, 'Action already decided or expired.');
@@ -213,8 +309,77 @@ class ActionExecutor
 
         $output = mb_strcut(mb_convert_encoding($result->output, 'UTF-8', 'UTF-8'), 0, SafeExecutor::MAX_OUTPUT_BYTES);
         $this->audit->record($machine, $run, $event, $action, $context + ['command' => $command, 'exit_code' => $result->exitCode, 'output_excerpt' => $output]);
+        $output = $output === '' ? "(no output, exit code {$result->exitCode})" : $output;
 
-        return $output === '' ? "(no output, exit code {$result->exitCode})" : $output;
+        return $output.$this->verify($machine, $run, $action, $context);
+    }
+
+    /**
+     * Checks that an action that ran had the effect it promised. A failed check is reported to the agent and to the
+     * humans; when the action names an undo, it is run straight away only if it is itself low risk with declared
+     * safeguards, and otherwise filed for approval like any other action.
+     *
+     * @param  array<string, mixed>  $context
+     */
+    private function verify(Machine $machine, ?AgentRun $run, string $actionName, array $context): string
+    {
+        $action = $this->catalog->get($actionName);
+        $verification = $action instanceof Verifiable ? $action->verification($context['arguments'] ?? []) : null;
+
+        if (! $verification) {
+            return '';
+        }
+
+        if ($delay = config('sentinel.gate.verify_delay_seconds')) {
+            sleep($delay);
+        }
+
+        try {
+            $result = $this->transport->run($machine, $verification->command, SafeExecutor::TIMEOUT_SECONDS);
+            $passed = ($verification->passes)($result);
+        } catch (Throwable $e) {
+            $result = new CommandResult($e->getMessage(), -1);
+            $passed = false;
+        }
+
+        $details = ['command' => $verification->command, 'expected' => $verification->expectation, 'exit_code' => $result->exitCode, 'output_excerpt' => mb_strcut($result->output, 0, 2000)];
+
+        if ($passed) {
+            $this->audit->record($machine, $run, 'action_verified', $actionName, $details);
+
+            return "\nVERIFIED: {$verification->expectation}.";
+        }
+
+        $this->audit->record($machine, $run, 'action_verification_failed', $actionName, $details);
+        $message = "\nVERIFICATION FAILED: expected {$verification->expectation}, the check said: ".trim(mb_strcut($result->output, 0, 300));
+        $message .= $verification->rollback ? $this->rollback($machine, $run, $actionName, $verification->rollback) : '';
+
+        app(Notifier::class)->machineAlert($machine, "{$actionName} did not have the expected effect on {$machine->name}", trim($message), evenWhenQuiet: true);
+
+        return $message;
+    }
+
+    /** @param array{0: string, 1: array<string, mixed>} $rollback */
+    private function rollback(Machine $machine, ?AgentRun $run, string $actionName, array $rollback): string
+    {
+        [$name, $arguments] = $rollback;
+        $undo = $this->catalog->get($name);
+        $command = $undo->command($arguments);
+
+        if ($undo->risk() === RiskLevel::Low && $undo instanceof HasSafeguards) {
+            $output = $this->run($machine, $run, $name, $command, ['arguments' => $arguments, 'rollback_of' => $actionName], 'action_rolled_back');
+
+            return "\nROLLED BACK with {$name}: ".trim($output);
+        }
+
+        $pending = PendingAction::create([
+            'machine_id' => $machine->id, 'agent_run_id' => $run?->id, 'action' => $name, 'arguments' => $arguments,
+            'command' => $command, 'risk' => $undo->risk()->value, 'reason' => "Undo of {$actionName}, whose check failed right after it ran.",
+        ]);
+        $this->audit->record($machine, $run, 'action_pending', $name, ['arguments' => $arguments, 'command' => $command, 'pending_action_id' => $pending->id, 'rollback_of' => $actionName]);
+        app(Notifier::class)->approvalNeeded($pending);
+
+        return "\nUNDO FILED for approval (#{$pending->id}): {$name}.";
     }
 
     /** How many times this exact command ran on the machine in the last 24 hours (autonomously or approved). */

@@ -4,6 +4,7 @@ namespace App\Notifications;
 
 use App\Ai\Severity;
 use App\Models\AgentRun;
+use App\Models\Finding;
 use App\Models\NotificationChannel;
 use App\Notifications\Channels\TelegramChannel;
 use App\Notifications\Channels\TelegramMessage;
@@ -40,6 +41,29 @@ class ScanReportNotification extends Notification implements ShouldQueue
             : ($this->run->summary ?: mb_substr((string) $this->run->report, 0, 600));
     }
 
+    /** One line per kind of change since the previous scan, e.g. "New: Password login enabled (high)". */
+    private function changes(): array
+    {
+        $diff = $this->run->findings_diff ?? [];
+        $findings = Finding::whereIn('id', collect($diff)->flatten()->all())->get()->keyBy('id');
+        $lines = [];
+
+        foreach (['new' => 'New', 'escalated' => 'Worse', 'resolved' => 'Resolved'] as $kind => $label) {
+            $titles = collect($diff[$kind] ?? [])->map(fn ($id) => $findings->get($id))->filter()
+                ->map(fn (Finding $f) => "{$f->title} ({$f->severity})");
+
+            if ($titles->isNotEmpty()) {
+                $lines[] = "{$label}: ".$titles->take(5)->implode('; ').($titles->count() > 5 ? ' and '.($titles->count() - 5).' more' : '');
+            }
+        }
+
+        if ($ongoing = count($diff['ongoing'] ?? [])) {
+            $lines[] = "Still open: {$ongoing}";
+        }
+
+        return $lines;
+    }
+
     public function toMail(NotificationChannel $notifiable): MailMessage
     {
         return (new MailMessage)
@@ -47,6 +71,7 @@ class ScanReportNotification extends Notification implements ShouldQueue
             ->line("Machine: {$this->run->machine->name} ({$this->run->machine->environment})")
             ->line('Severity: '.($this->run->status === 'failed' ? 'scan failed' : $this->severity->value).($this->run->severity ? '' : ' (no verdict given by the agent, assumed)'))
             ->line($this->summary())
+            ->lines($this->changes())
             ->line("Scan #{$this->run->id} ({$this->run->trigger}). Open Sentinel to read the full report.");
     }
 
@@ -59,8 +84,9 @@ class ScanReportNotification extends Notification implements ShouldQueue
         };
 
         return new TelegramMessage(sprintf(
-            "%s <b>%s</b>\n%s\n\n<i>Scan #%d (%s). Full report in Sentinel.</i>",
-            $icon, e($this->headline()), e(mb_substr($this->summary(), 0, 1500)), $this->run->id, e($this->run->trigger),
+            "%s <b>%s</b>\n%s%s\n\n<i>Scan #%d (%s). Full report in Sentinel.</i>",
+            $icon, e($this->headline()), e(mb_substr($this->summary(), 0, 1500)),
+            collect($this->changes())->map(fn (string $line) => "\n".e(mb_substr($line, 0, 500)))->implode(''), $this->run->id, e($this->run->trigger),
         ));
     }
 }

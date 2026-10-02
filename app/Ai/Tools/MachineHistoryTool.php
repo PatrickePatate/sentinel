@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Models\Machine;
+use App\Monitoring\MetricsCollector;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
@@ -42,19 +43,34 @@ class MachineHistoryTool implements Tool
 
         $out = $runs->isEmpty() ? "No corrective action ran on this machine in the last 7 days.\n" : "Corrective actions in the last 7 days:\n".$runs->implode("\n")."\n";
 
-        return $out.$this->diskTrend();
+        return $out.$this->metrics();
     }
 
-    private function diskTrend(): string
+    private function metrics(): string
     {
-        $trend = $this->machine->diskTrend();
+        $latest = $this->machine->latestMetrics();
 
-        if ($trend === null) {
-            return "Disk trend: not enough samples yet (Sentinel records one at each scheduled web server check).\n";
+        if ($latest === []) {
+            return "Metrics: none recorded in the last 24 hours.\n";
         }
 
-        $line = sprintf('Disk trend: / was %.0f%% %s, is %.0f%% now (%+.1f points per day)', $trend['from'], $trend['since']->diffForHumans(), $trend['percent'], $trend['per_day']);
+        $lines = [];
 
-        return $line.($trend['days_left'] !== null ? "; full in about {$trend['days_left']} days at this pace" : '').".\n";
+        foreach (MetricsCollector::METRICS as $name => [$label, $unit]) {
+            if (! isset($latest[$name])) {
+                continue;
+            }
+
+            $line = "{$label}: {$latest[$name]}{$unit}";
+            $trend = $unit === '%' ? $this->machine->metricTrend($name) : null;
+
+            if ($trend) {
+                $line .= sprintf(' (%+.1f points per day over 7 days%s)', $trend['per_day'], $trend['days_left'] !== null ? ", full in about {$trend['days_left']} days" : '');
+            }
+
+            $lines[] = $line;
+        }
+
+        return "Metrics (latest sample, read by Sentinel):\n".implode("\n", $lines)."\n";
     }
 }

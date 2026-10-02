@@ -3,17 +3,20 @@
 namespace App\Livewire\Machines;
 
 use App\Ai\ScanRunner;
-use App\Livewire\Concerns\AuthorizesAdmin;
+use App\Livewire\Concerns\AuthorizesAccess;
 use App\Livewire\Concerns\ListensToRealtime;
 use App\Livewire\Concerns\StartsScans;
 use App\Models\AgentRun;
 use App\Models\Machine;
+use App\Models\MachineMetric;
 use App\Models\MemorySuggestion;
+use App\Monitoring\MetricsCollector;
 use App\Ssh\AccessControl;
 use App\Ssh\AuditTrail;
 use App\Ssh\HostKeyFingerprint;
 use App\Ssh\HostKeyPinner;
 use App\Ssh\Provisioning\ClientUpdater;
+use Illuminate\Support\Carbon;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Url;
@@ -24,7 +27,7 @@ use Throwable;
 #[Layout('components.layouts.app')]
 class Show extends Component
 {
-    use AuthorizesAdmin;
+    use AuthorizesAccess;
     use ListensToRealtime;
     use StartsScans;
 
@@ -50,6 +53,8 @@ class Show extends Component
 
     public function scan(ScanRunner $runner)
     {
+        $this->allow('approve');
+
         return $this->queueScan($runner, $this->machine());
     }
 
@@ -60,17 +65,20 @@ class Show extends Component
 
     public function issueLink(): void
     {
+        $this->allow('admin');
         $this->machine()->issueProvisionToken();
         $this->dispatch('toast', message: 'One-hour provisioning link issued', type: 'success');
     }
 
     public function revokeLink(): void
     {
+        $this->allow('admin');
         $this->machine()->forceFill(['provision_token' => null, 'provision_token_expires_at' => null])->save();
     }
 
     public function showHostKey(): void
     {
+        $this->allow('admin');
         try {
             $this->presented = HostKeyFingerprint::fetch($this->machine());
         } catch (Throwable $e) {
@@ -85,21 +93,25 @@ class Show extends Component
 
     public function pin(HostKeyPinner $pinner): void
     {
+        $this->allow('admin');
         $this->validate(['fingerprint' => ['required', 'string']]);
 
         [$status] = $pinner->pinVerified($this->machine(), $this->fingerprint);
 
-        $this->dispatch('toast', ...match ($status) {
+        $toast = match ($status) {
             HostKeyPinner::PINNED => ['message' => 'Host key pinned', 'type' => 'success'],
             HostKeyPinner::MISMATCH => ['message' => 'Fingerprint does not match', 'description' => 'The server presents a different key. Nothing was pinned.', 'type' => 'error'],
             default => ['message' => 'Could not reach the machine', 'type' => 'error'],
-        });
+        };
+
+        $this->dispatch(...['event' => 'toast', ...$toast]);
 
         $this->fingerprint = '';
     }
 
     public function checkClient(ClientUpdater $updater): void
     {
+        $this->allow('approve');
         $status = $updater->check($this->machine());
 
         $this->dispatch('toast', message: $status->label(), description: $status->error ?? '', type: $status->isUpToDate() ? 'success' : ($status->state === 'unreachable' ? 'error' : 'warning'));
@@ -107,6 +119,7 @@ class Show extends Component
 
     public function updateClient(ClientUpdater $updater): void
     {
+        $this->allow('admin');
         try {
             $status = $updater->deploy($this->machine());
             $this->dispatch('toast', message: 'Client updated', description: $status->installed ?? '', type: 'success');
@@ -117,6 +130,7 @@ class Show extends Component
 
     public function acceptNote(int $id): void
     {
+        $this->allow('admin');
         $machine = $this->machine();
         $suggestion = MemorySuggestion::where('machine_id', $machine->id)->where('status', 'pending')->findOrFail($id);
         $memory = trim($machine->memory."\n- ".$suggestion->note);
@@ -134,31 +148,59 @@ class Show extends Component
 
     public function dismissNote(int $id): void
     {
+        $this->allow('approve');
         MemorySuggestion::where('machine_id', $this->machineId)->where('status', 'pending')->whereKey($id)->update(['status' => 'dismissed']);
     }
 
     public function revokeTrust(string $action): void
     {
+        $this->allow('admin');
         $machine = $this->machine();
         $machine->forceFill(['trusted_actions' => array_values(array_diff($machine->trusted_actions ?? [], [$action])) ?: null])->save();
         app(AuditTrail::class)->record($machine, null, 'action_trust_revoked', $action, []);
         $this->dispatch('toast', message: 'Back to the normal rules for '.$action);
     }
 
+    public const PLANNED_WORK_HOURS = [1, 4, 12];
+
+    /** Planned work: mutes scan and machine alerts and skips scheduled scans until it ends (approvals still reach you). */
+    public function startPlannedWork(int $hours): void
+    {
+        $this->allow('approve');
+        abort_unless(in_array($hours, self::PLANNED_WORK_HOURS, true), 422);
+
+        $machine = $this->machine();
+        $machine->update(['maintenance_until' => now()->addHours($hours)]);
+        app(AuditTrail::class)->record($machine, null, 'planned_work_started', "planned work for {$hours}h", ['until' => $machine->maintenance_until->toIso8601String()]);
+        $this->dispatch('toast', message: "Alerts muted for {$hours} hour(s)", description: 'Scheduled scans are skipped meanwhile.', type: 'success');
+    }
+
+    public function endPlannedWork(): void
+    {
+        $this->allow('approve');
+        $machine = $this->machine();
+        $machine->update(['maintenance_until' => null]);
+        app(AuditTrail::class)->record($machine, null, 'planned_work_ended', 'planned work ended');
+        $this->dispatch('toast', message: 'Alerts are back on', type: 'success');
+    }
+
     public function revoke(AccessControl $access): void
     {
+        $this->allow('admin');
         $cancelled = $access->revoke($this->machine());
         $this->dispatch('toast', message: 'Access revoked', description: "{$cancelled} pending action(s) cancelled. Run the revocation script on the machine too.", type: 'warning');
     }
 
     public function restore(AccessControl $access): void
     {
+        $this->allow('admin');
         $access->lift($this->machine());
         $this->dispatch('toast', message: 'Revocation lifted: re-provision the machine', type: 'success');
     }
 
     public function delete()
     {
+        $this->allow('admin');
         $this->machine()->delete();
         session()->flash('toast', ['message' => 'Machine deleted', 'type' => 'success']);
 
@@ -170,6 +212,37 @@ class Show extends Component
         return Machine::findOrFail($this->machineId);
     }
 
+    /**
+     * The last 7 days of each sampled metric, thinned to about 80 points for the sparklines.
+     *
+     * @return array<string, array{label: string, unit: string, points: list<array{at: Carbon, value: float}>, trend: ?array}>
+     */
+    private function health(Machine $machine): array
+    {
+        $samples = MachineMetric::where('machine_id', $machine->id)->where('recorded_at', '>=', now()->subDays(7))
+            ->orderBy('recorded_at')->get()->groupBy('name');
+        $health = [];
+
+        foreach (MetricsCollector::METRICS as $name => [$label, $unit]) {
+            $series = $samples->get($name);
+
+            if (! $series) {
+                continue;
+            }
+
+            $every = max(1, (int) ceil($series->count() / 80));
+            $health[$name] = [
+                'label' => $label,
+                'unit' => $unit,
+                'points' => $series->values()->filter(fn ($m, $i) => $i % $every === 0 || $i === $series->count() - 1)
+                    ->map(fn (MachineMetric $m) => ['at' => $m->recorded_at, 'value' => $m->value])->values()->all(),
+                'trend' => $unit === '%' ? $machine->metricTrend($name) : null,
+            ];
+        }
+
+        return $health;
+    }
+
     public function render(ClientUpdater $updater)
     {
         $machine = $this->machine();
@@ -178,7 +251,9 @@ class Show extends Component
             'machine' => $machine,
             'suggestions' => MemorySuggestion::where('machine_id', $machine->id)->where('status', 'pending')->latest('id')->get(),
             'sites' => $machine->siteChecks()->orderBy('url')->get(),
+            'openFindings' => $machine->findings()->unresolved()->get(['id', 'severity']),
             'disk' => $machine->diskTrend(),
+            'health' => $this->health($machine),
             'client' => $updater->lastKnown($machine),
             'runs' => AgentRun::where('machine_id', $machine->id)->whereNull('parent_run_id')->latest('id')->limit(15)->get(),
             'activity' => $this->tab === 'activity'

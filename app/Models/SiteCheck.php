@@ -17,6 +17,7 @@ class SiteCheck extends Model
         return ['ok' => 'boolean', 'analyze_on_down' => 'boolean', 'cert_expires_at' => 'datetime', 'checked_at' => 'datetime'];
     }
 
+    /** @return BelongsTo<Machine, $this> */
     public function machine(): BelongsTo
     {
         return $this->belongsTo(Machine::class);
