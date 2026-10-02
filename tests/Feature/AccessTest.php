@@ -149,7 +149,8 @@ it('creates users with a role from the command line', function () {
 
 it('computes the RFC 6238 test codes and refuses a code used twice', function () {
     $totp = new Totp;
-    $secret = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ';
+    // The public test key of RFC 6238, appendix B: the ASCII seed "12345678901234567890" in base32.
+    $secret = str_repeat('GEZDGNBVGY3TQOJQ', 2);
 
     expect($totp->code($secret, 59))->toBe('287082')
         ->and($totp->code($secret, 1111111109))->toBe('081804')
