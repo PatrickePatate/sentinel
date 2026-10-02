@@ -12,6 +12,9 @@ class HardenSshAction implements ActionTool, RequiresSudo, Verifiable
 
     public const WRAPPER = '/usr/local/sbin/sentinel-sshd-harden';
 
+    /** Never "no": root must keep logging in with its SSH key, whatever else is hardened. */
+    public const ROOT_LOGIN = ['prohibit-password', 'keep'];
+
     public function name(): string
     {
         return 'harden_ssh';
@@ -19,8 +22,8 @@ class HardenSshAction implements ActionTool, RequiresSudo, Verifiable
 
     public function description(): string
     {
-        return 'Disable SSH root login and/or password authentication through a Sentinel drop-in file, then reload sshd (open sessions stay up). '
-            .'If root logs in with a key and no other admin has one, use permit_root_login=prohibit-password (\"no\" would lock root out and is refused). '
+        return 'Restrict root to SSH key logins (PermitRootLogin prohibit-password) and/or disable password authentication, through a Sentinel drop-in file, then reload sshd (open sessions stay up). '
+            .'Root key logins are always kept: disabling root login entirely is not possible with this action. '
             .'Refuses when no administrator other than Sentinel has an SSH key, and reverts if sshd rejects the change or another setting overrides it. Always needs human approval.';
     }
 
@@ -32,7 +35,7 @@ class HardenSshAction implements ActionTool, RequiresSudo, Verifiable
     public function schema(JsonSchema $schema): array
     {
         return [
-            'permit_root_login' => $schema->string()->enum(['no', 'prohibit-password', 'keep'])->description('no: root cannot log in; prohibit-password: root only with a key; keep: unchanged')->required(),
+            'permit_root_login' => $schema->string()->enum(self::ROOT_LOGIN)->description('prohibit-password: root only with a key; keep: unchanged')->required(),
             'password_authentication' => $schema->string()->enum(['no', 'keep'])->description('no: disable password and keyboard-interactive logins; keep: unchanged')->required(),
         ];
     }
@@ -42,7 +45,7 @@ class HardenSshAction implements ActionTool, RequiresSudo, Verifiable
         $rootLogin = $arguments['permit_root_login'] ?? null;
         $passwordAuth = $arguments['password_authentication'] ?? null;
 
-        if (! in_array($rootLogin, ['no', 'prohibit-password', 'keep'], true) || ! in_array($passwordAuth, ['no', 'keep'], true)) {
+        if (! in_array($rootLogin, self::ROOT_LOGIN, true) || ! in_array($passwordAuth, ['no', 'keep'], true)) {
             throw new InvalidToolArguments('Invalid SSH hardening values.');
         }
 

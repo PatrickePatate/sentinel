@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Managed by Sentinel. Hardens sshd through one drop-in file; validates its own input and refuses changes that could lock admins out.
+# Root SSH key logins are always kept: PermitRootLogin is only ever set to prohibit-password (keys only), never to no.
 set -euo pipefail
 export LC_ALL=C PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
-[[ $# -eq 2 ]] || { echo "usage: $0 <no|prohibit-password|keep> <no|keep>" >&2; exit 2; }
+[[ $# -eq 2 ]] || { echo "usage: $0 <prohibit-password|keep> <no|keep>" >&2; exit 2; }
 root_login=$1
 password_auth=$2
-[[ $root_login =~ ^(no|prohibit-password|keep)$ ]] || { echo "invalid root login value" >&2; exit 2; }
+[[ $root_login =~ ^(prohibit-password|keep)$ ]] || { echo "invalid root login value (root key logins are always kept)" >&2; exit 2; }
 [[ $password_auth =~ ^(no|keep)$ ]] || { echo "invalid password auth value" >&2; exit 2; }
 [[ $root_login != keep || $password_auth != keep ]] || { echo "nothing to change" >&2; exit 2; }
 
@@ -24,14 +25,10 @@ admin_with_key=0
 for member in $(getent group sudo | cut -d: -f4 | tr ',' ' ') $(getent group wheel | cut -d: -f4 | tr ',' ' '); do
     [[ $member != "$agent" ]] && has_keys "$member" && admin_with_key=1
 done
-if [[ $root_login != no ]] && has_keys root; then admin_with_key=1; fi
+has_keys root && admin_with_key=1
 if [[ $password_auth == no || $root_login != keep ]]; then
     if (( ! admin_with_key )); then
-        if [[ $root_login == no ]] && has_keys root; then
-            echo "root has an SSH key, but PermitRootLogin no would block it too, and no sudo-group user other than $agent has a key: refusing, it would lock you out. Use prohibit-password to keep root key logins." >&2
-        else
-            echo "no administrator other than $agent (root, or a sudo/wheel member) has an SSH key: refusing, it could lock you out" >&2
-        fi
+        echo "no administrator other than $agent (root, or a sudo/wheel member) has an SSH key: refusing, it could lock you out" >&2
         exit 4
     fi
 fi

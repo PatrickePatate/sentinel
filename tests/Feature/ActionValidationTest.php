@@ -148,6 +148,7 @@ dataset('invalid arguments', [
     'install: not installable' => ['install_security_package', ['package' => 'netcat']],
     'harden: unknown value' => ['harden_ssh', ['permit_root_login' => 'yes', 'password_authentication' => 'no']],
     'harden: nothing to change' => ['harden_ssh', ['permit_root_login' => 'keep', 'password_authentication' => 'keep']],
+    'harden: root key login is never disabled' => ['harden_ssh', ['permit_root_login' => 'no', 'password_authentication' => 'keep']],
     'start: option-looking unit' => ['start_crashed_service', ['service' => '-nginx']],
     'start: unit with a slash' => ['start_crashed_service', ['service' => '../nginx']],
     'start: unit too long' => ['start_crashed_service', ['service' => str_repeat('a', 65)]],
