@@ -45,7 +45,7 @@ Sentinel is designed so that a confused or manipulated model can't damage a serv
 
 ## Requirements
 
-- PHP 8.3+ with Composer
+- PHP 8.4+ with Composer
 - Node.js + npm (to build frontend assets)
 - A database (SQLite works out of the box; MySQL/PostgreSQL are supported)
 - An API key for an LLM provider (OpenAI, OpenRouter, or any provider from `config/ai.php`)

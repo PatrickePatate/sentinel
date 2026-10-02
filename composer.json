@@ -6,7 +6,7 @@
     "keywords": ["laravel", "framework"],
     "license": "PolyForm-Noncommercial-1.0.0",
     "require": {
-        "php": "^8.3",
+        "php": "^8.4",
         "bacon/bacon-qr-code": "^3.1",
         "blade-ui-kit/blade-icons": "^1.10",
         "laravel/ai": "^1.0",
