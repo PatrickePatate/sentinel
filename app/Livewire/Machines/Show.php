@@ -89,11 +89,13 @@ class Show extends Component
 
         [$status] = $pinner->pinVerified($this->machine(), $this->fingerprint);
 
-        $this->dispatch('toast', ...match ($status) {
+        $toast = match ($status) {
             HostKeyPinner::PINNED => ['message' => 'Host key pinned', 'type' => 'success'],
             HostKeyPinner::MISMATCH => ['message' => 'Fingerprint does not match', 'description' => 'The server presents a different key. Nothing was pinned.', 'type' => 'error'],
             default => ['message' => 'Could not reach the machine', 'type' => 'error'],
-        });
+        };
+
+        $this->dispatch(...['event' => 'toast', ...$toast]);
 
         $this->fingerprint = '';
     }

@@ -1,0 +1,265 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Yield can be used only with these return types\: Generator, Iterator, Traversable, iterable\.$#'
+			identifier: generator.returnType
+			count: 6
+			path: app/Ai/Agents/SysadminAgent.php
+
+		-
+			message: '#^Strict comparison using \!\=\= between non\-empty\-list\<string\> and array\{\} will always evaluate to true\.$#'
+			identifier: notIdentical.alwaysTrue
+			count: 1
+			path: app/Ai/PricingFetcher.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$machine\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Ai/ScanRunner.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$objective\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Ai/ScanRunner.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Database\\Eloquent\\Model\:\:followUps\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Ai/ScanRunner.php
+
+		-
+			message: '#^Parameter \#1 \$machine of method App\\Ai\\ScanRunner\:\:execute\(\) expects App\\Models\\Machine, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Ai/ScanRunner.php
+
+		-
+			message: '#^Call to an undefined method phpseclib3\\Crypt\\Common\\AsymmetricKey\:\:getPublicKey\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Console/Commands/CheckMachine.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$environment\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Console/Commands/DecidePendingAction.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Console/Commands/DecidePendingAction.php
+
+		-
+			message: '#^Parameter \#1 \$callback of method Illuminate\\Database\\Eloquent\\Collection\<int,App\\Models\\PendingAction\>\:\:map\(\) contains unresolvable type\.$#'
+			identifier: argument.unresolvableType
+			count: 1
+			path: app/Console/Commands/DecidePendingAction.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Http/Controllers/TelegramWebhookController.php
+
+		-
+			message: '#^Parameter \#1 \$machine of method App\\Ssh\\AuditTrail\:\:record\(\) expects App\\Models\\Machine, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/TelegramWebhookController.php
+
+		-
+			message: '#^Parameter \#2 \$run of method App\\Ssh\\AuditTrail\:\:record\(\) expects App\\Models\\AgentRun\|null, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Http/Controllers/TelegramWebhookController.php
+
+		-
+			message: '#^Access to an undefined property App\\Models\\PendingAction\:\:\$n\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Livewire/Actions/Index.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Livewire/Actions/Index.php
+
+		-
+			message: '#^Parameter \#1 \$machine of method App\\Ssh\\AuditTrail\:\:record\(\) expects App\\Models\\Machine, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Livewire/Actions/Index.php
+
+		-
+			message: '#^Parameter \#2 \$run of method App\\Ssh\\AuditTrail\:\:record\(\) expects App\\Models\\AgentRun\|null, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Livewire/Actions/Index.php
+
+		-
+			message: '#^Offset ''bot_token'' on array\{\}\|string on left side of \?\? does not exist\.$#'
+			identifier: nullCoalesce.offset
+			count: 2
+			path: app/Livewire/Channels/Form.php
+
+		-
+			message: '#^Offset ''webhook_secret'' on array\{\}\|string on left side of \?\? does not exist\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: app/Livewire/Channels/Form.php
+
+		-
+			message: '#^Parameter \#1 \$key of method Illuminate\\Database\\Eloquent\\Collection\<int,Illuminate\\Database\\Eloquent\\Model\>\:\:contains\(\) expects \(callable\(Illuminate\\Database\\Eloquent\\Model, int\)\: bool\)\|Illuminate\\Database\\Eloquent\\Model\|int\|string, Closure\(App\\Models\\AgentRun\)\: bool given\.$#'
+			identifier: argument.type
+			count: 2
+			path: app/Livewire/ScanReport.php
+
+		-
+			message: '#^Parameter \#1 \$machine of method App\\Monitoring\\SiteMonitor\:\:willAnalyze\(\) expects App\\Models\\Machine, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Livewire/Sites/Index.php
+
+		-
+			message: '#^Call to an undefined method phpseclib3\\Crypt\\Common\\AsymmetricKey\:\:getPublicKey\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Models/Machine.php
+
+		-
+			message: '#^Cannot call method diffInSeconds\(\) on string\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: app/Models/Machine.php
+
+		-
+			message: '#^Cannot call method isFuture\(\) on string\.$#'
+			identifier: method.nonObject
+			count: 2
+			path: app/Models/Machine.php
+
+		-
+			message: '#^Method App\\Models\\Machine\:\:diskTrend\(\) should return array\{percent\: float, since\: Carbon\\CarbonInterface, from\: float, per_day\: float, days_left\: int\|null\}\|null but returns array\{percent\: float, since\: string, from\: float, per_day\: float, days_left\: int\|null\}\.$#'
+			identifier: return.type
+			count: 1
+			path: app/Models/Machine.php
+
+		-
+			message: '#^Offset string on array\{\}\|string on left side of \?\? does not exist\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: app/Models/NotificationChannel.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$id\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Monitoring/SiteMonitor.php
+
+		-
+			message: '#^Cannot call method toDateString\(\) on string\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: app/Monitoring/SiteMonitor.php
+
+		-
+			message: '#^Parameter \#1 \$machine of method App\\Monitoring\\SiteMonitor\:\:announce\(\) expects App\\Models\\Machine, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Monitoring/SiteMonitor.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$environment\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Notifications/ActionApprovalNotification.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 3
+			path: app/Notifications/ActionApprovalNotification.php
+
+		-
+			message: '#^Call to an undefined method Illuminate\\Notifications\\Notification\:\:toTelegram\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: app/Notifications/Channels/TelegramChannel.php
+
+		-
+			message: '#^Cannot assign offset ''webhook_secret'' to string\.$#'
+			identifier: offsetAssign.dimType
+			count: 1
+			path: app/Notifications/Channels/TelegramWebhook.php
+
+		-
+			message: '#^Offset ''webhook_secret'' on string on left side of \?\? does not exist\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: app/Notifications/Channels/TelegramWebhook.php
+
+		-
+			message: '#^Parameter \#1 \$run of method App\\Notifications\\Notifier\:\:dispatch\(\) expects App\\Models\\AgentRun\|null, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Notifications/Notifier.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$environment\.$#'
+			identifier: property.notFound
+			count: 1
+			path: app/Notifications/ScanReportNotification.php
+
+		-
+			message: '#^Access to an undefined property Illuminate\\Database\\Eloquent\\Model\:\:\$name\.$#'
+			identifier: property.notFound
+			count: 3
+			path: app/Notifications/ScanReportNotification.php
+
+		-
+			message: '#^Parameter \#1 \$machine of method App\\Ssh\\ActionExecutor\:\:run\(\) expects App\\Models\\Machine, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Ssh/ActionExecutor.php
+
+		-
+			message: '#^Parameter \#1 \$machine of method App\\Ssh\\AuditTrail\:\:record\(\) expects App\\Models\\Machine, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 2
+			path: app/Ssh/ActionExecutor.php
+
+		-
+			message: '#^Parameter \#2 \$run of method App\\Ssh\\ActionExecutor\:\:run\(\) expects App\\Models\\AgentRun\|null, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Ssh/ActionExecutor.php
+
+		-
+			message: '#^Parameter \#2 \$run of method App\\Ssh\\AuditTrail\:\:record\(\) expects App\\Models\\AgentRun\|null, Illuminate\\Database\\Eloquent\\Model\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: app/Ssh/ActionExecutor.php
+
+		-
+			message: '#^Access to an undefined property Laravel\\Ai\\Responses\\Data\\Answer\:\:\$choice\.$#'
+			identifier: property.notFound
+			count: 2
+			path: app/Ssh/Gate/RiskGate.php
+
+		-
+			message: '#^Access to an undefined property Laravel\\Ai\\Responses\\Data\\Answer\:\:\$probability\.$#'
+			identifier: property.notFound
+			count: 3
+			path: app/Ssh/Gate/RiskGate.php
+
+		-
+			message: '#^Call to an undefined method Laravel\\Ai\\Responses\\Data\\Answer\:\:probabilityOf\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: app/Ssh/Gate/RiskGate.php
