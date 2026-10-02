@@ -30,7 +30,7 @@ class Costs extends Component
         $runs = AgentRun::whereBetween('created_at', [$month->copy(), $month->copy()->endOfMonth()]);
         $paid = (clone $runs)->whereNotNull('cost_usd');
 
-        $kinds = (clone $paid)->selectRaw('trigger, profile, count(*) as runs, sum(cost_usd) as cost')->groupBy('trigger', 'profile')->toBase()->get()
+        $kinds = (clone $paid)->select('trigger', 'profile')->selectRaw('count(*) as runs, sum(cost_usd) as cost')->groupBy('trigger', 'profile')->toBase()->get()
             ->map(fn ($row) => ['label' => $this->kind($row->trigger, $row->profile), 'runs' => (int) $row->runs, 'cost' => (float) $row->cost])
             ->groupBy('label')->map(fn ($rows, $label) => ['label' => $label, 'runs' => $rows->sum('runs'), 'cost' => $rows->sum('cost')])
             ->sortByDesc('cost')->values();
