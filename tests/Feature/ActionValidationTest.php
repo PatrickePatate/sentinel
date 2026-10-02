@@ -49,6 +49,7 @@ function validActionArguments(): array
         'start_crashed_service' => ['service' => 'php8.3-fpm'],
         'reload_web_config' => ['service' => 'nginx'],
         'rollback_web_config' => ['service' => 'nginx'],
+        'remove_old_kernels' => [],
     ];
 }
 

@@ -12,6 +12,7 @@ use App\Ssh\Actions\HardenSshAction;
 use App\Ssh\Actions\InstallSecurityPackageAction;
 use App\Ssh\Actions\ReloadServiceAction;
 use App\Ssh\Actions\ReloadWebConfigAction;
+use App\Ssh\Actions\RemoveOldKernelsAction;
 use App\Ssh\Actions\ResetFailedUnitAction;
 use App\Ssh\Actions\RestartServiceAction;
 use App\Ssh\Actions\RiskLevel;
@@ -57,6 +58,7 @@ class ActionCatalog
             new StartDownServiceAction,
             new ReloadWebConfigAction,
             new RollbackWebConfigAction,
+            new RemoveOldKernelsAction,
         ]);
     }
 
