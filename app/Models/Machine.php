@@ -141,18 +141,46 @@ class Machine extends Model
     /** @return array{percent: float, since: CarbonInterface, from: float, per_day: float, days_left: ?int}|null */
     public function diskTrend(): ?array
     {
-        $samples = MachineMetric::where('machine_id', $this->id)->where('name', 'disk_root_percent')
-            ->where('recorded_at', '>=', now()->subDays(14))->orderBy('recorded_at')->get();
+        return $this->metricTrend('disk_root_percent', 14);
+    }
+
+    /**
+     * Where a metric stands and where it is heading: a least-squares line over the window, so one odd sample
+     * does not swing the forecast. days_left is when a percentage would reach 100 at this pace.
+     *
+     * @return array{percent: float, since: CarbonInterface, from: float, per_day: float, days_left: ?int}|null
+     */
+    public function metricTrend(string $name, int $days = 7): ?array
+    {
+        $samples = MachineMetric::where('machine_id', $this->id)->where('name', $name)
+            ->where('recorded_at', '>=', now()->subDays($days))->orderBy('recorded_at')->get();
 
         if ($samples->count() < 2) {
             return null;
         }
 
-        [$first, $last] = [$samples->first(), $samples->last()];
-        $days = max($first->recorded_at->diffInSeconds($last->recorded_at) / 86400, 0.01);
-        $perDay = ($last->value - $first->value) / $days;
+        $start = $samples->first()->recorded_at;
+        $points = $samples->map(fn (MachineMetric $m) => [$start->diffInSeconds($m->recorded_at) / 86400, $m->value]);
+        $meanX = $points->avg(0);
+        $meanY = $points->avg(1);
+        $variance = $points->sum(fn ($p) => ($p[0] - $meanX) ** 2);
+        $perDay = $variance > 0 ? $points->sum(fn ($p) => ($p[0] - $meanX) * ($p[1] - $meanY)) / $variance : 0.0;
+        $last = $samples->last()->value;
 
-        return ['percent' => $last->value, 'since' => $first->recorded_at, 'from' => $first->value, 'per_day' => $perDay, 'days_left' => $perDay > 0.05 ? (int) ceil((100 - $last->value) / $perDay) : null];
+        return [
+            'percent' => $last,
+            'since' => $start,
+            'from' => $samples->first()->value,
+            'per_day' => $perDay,
+            'days_left' => $perDay > 0.05 && $last < 100 ? (int) ceil((100 - $last) / $perDay) : null,
+        ];
+    }
+
+    /** @return array<string, float> Latest value of each metric. */
+    public function latestMetrics(): array
+    {
+        return MachineMetric::where('machine_id', $this->id)->where('recorded_at', '>=', now()->subDay())
+            ->orderBy('recorded_at')->get()->mapWithKeys(fn (MachineMetric $m) => [$m->name => $m->value])->all();
     }
 
     public function siteChecks(): HasMany

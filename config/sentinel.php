@@ -117,6 +117,14 @@ TXT,
     //   'claude-sonnet-5-5' => ['input' => 0.0, 'output' => 0.0, 'cache_read' => 0.0, 'cache_write' => 0.0],
     'pricing' => [],
 
+    'metrics' => [
+        // How often machines are sampled (php artisan sentinel:collect-metrics), and when a trend becomes an alert.
+        'interval_minutes' => (int) env('SENTINEL_METRICS_INTERVAL', 15),
+        'trend_days' => 7,
+        'forecast_days' => 7,
+        'full_percent' => 90,
+    ],
+
     'notifications' => [
         // Skip scan notifications that only repeat known findings (nothing new or worse, verdict below high).
         'only_changes' => (bool) env('SENTINEL_NOTIFY_ONLY_CHANGES', true),

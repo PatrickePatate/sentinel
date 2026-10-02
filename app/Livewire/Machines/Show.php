@@ -8,12 +8,15 @@ use App\Livewire\Concerns\ListensToRealtime;
 use App\Livewire\Concerns\StartsScans;
 use App\Models\AgentRun;
 use App\Models\Machine;
+use App\Models\MachineMetric;
 use App\Models\MemorySuggestion;
+use App\Monitoring\MetricsCollector;
 use App\Ssh\AccessControl;
 use App\Ssh\AuditTrail;
 use App\Ssh\HostKeyFingerprint;
 use App\Ssh\HostKeyPinner;
 use App\Ssh\Provisioning\ClientUpdater;
+use Illuminate\Support\Carbon;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Url;
@@ -172,6 +175,37 @@ class Show extends Component
         return Machine::findOrFail($this->machineId);
     }
 
+    /**
+     * The last 7 days of each sampled metric, thinned to about 80 points for the sparklines.
+     *
+     * @return array<string, array{label: string, unit: string, points: list<array{at: Carbon, value: float}>, trend: ?array}>
+     */
+    private function health(Machine $machine): array
+    {
+        $samples = MachineMetric::where('machine_id', $machine->id)->where('recorded_at', '>=', now()->subDays(7))
+            ->orderBy('recorded_at')->get()->groupBy('name');
+        $health = [];
+
+        foreach (MetricsCollector::METRICS as $name => [$label, $unit]) {
+            $series = $samples->get($name);
+
+            if (! $series) {
+                continue;
+            }
+
+            $every = max(1, (int) ceil($series->count() / 80));
+            $health[$name] = [
+                'label' => $label,
+                'unit' => $unit,
+                'points' => $series->values()->filter(fn ($m, $i) => $i % $every === 0 || $i === $series->count() - 1)
+                    ->map(fn (MachineMetric $m) => ['at' => $m->recorded_at, 'value' => $m->value])->values()->all(),
+                'trend' => $unit === '%' ? $machine->metricTrend($name) : null,
+            ];
+        }
+
+        return $health;
+    }
+
     public function render(ClientUpdater $updater)
     {
         $machine = $this->machine();
@@ -182,6 +216,7 @@ class Show extends Component
             'sites' => $machine->siteChecks()->orderBy('url')->get(),
             'openFindings' => $machine->findings()->unresolved()->get(['id', 'severity']),
             'disk' => $machine->diskTrend(),
+            'health' => $this->health($machine),
             'client' => $updater->lastKnown($machine),
             'runs' => AgentRun::where('machine_id', $machine->id)->whereNull('parent_run_id')->latest('id')->limit(15)->get(),
             'activity' => $this->tab === 'activity'

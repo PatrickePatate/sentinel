@@ -127,21 +127,9 @@ parameters:
 			path: app/Models/Machine.php
 
 		-
-			message: '#^Cannot call method diffInSeconds\(\) on string\.$#'
-			identifier: method.nonObject
-			count: 1
-			path: app/Models/Machine.php
-
-		-
 			message: '#^Cannot call method isFuture\(\) on string\.$#'
 			identifier: method.nonObject
 			count: 2
-			path: app/Models/Machine.php
-
-		-
-			message: '#^Method App\\Models\\Machine\:\:diskTrend\(\) should return array\{percent\: float, since\: Carbon\\CarbonInterface, from\: float, per_day\: float, days_left\: int\|null\}\|null but returns array\{percent\: float, since\: string, from\: float, per_day\: float, days_left\: int\|null\}\.$#'
-			identifier: return.type
-			count: 1
 			path: app/Models/Machine.php
 
 		-

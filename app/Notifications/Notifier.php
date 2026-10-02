@@ -49,6 +49,12 @@ class Notifier
             && ! $severity->atLeast(Severity::High);
     }
 
+    /** @param array<string, mixed> $digest The weekly summary, for every channel that takes scan notifications. */
+    public function digest(array $digest): void
+    {
+        $this->dispatch(null, fn () => NotificationChannel::where('enabled', true)->where('notify_scans', true)->get(), new FleetDigestNotification($digest));
+    }
+
     /** Tells every channel that takes scan notifications. */
     public function machineAlert(Machine $machine, string $title, string $body, bool $urgent = true): void
     {

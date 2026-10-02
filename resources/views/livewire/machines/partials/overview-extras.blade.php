@@ -1,3 +1,20 @@
+@if ($health)
+    <x-ui.card title="Health" description="Sampled by Sentinel every few minutes over SSH, last 7 days. Hover a line for the values.">
+        <div class="grid gap-x-8 gap-y-4 sm:grid-cols-2 xl:grid-cols-4">
+            @foreach ($health as $name => $metric)
+                @php($last = end($metric['points'])['value'])
+                <div wire:key="m{{ $name }}" class="space-y-1">
+                    <div class="flex items-baseline justify-between gap-2"><span class="text-sm text-muted-foreground">{{ $metric['label'] }}</span><span class="text-sm font-medium tabular-nums">{{ $name === 'reboot_required' ? ($last ? 'Yes' : 'No') : rtrim(rtrim(number_format($last, 1), '0'), '.').$metric['unit'] }}</span></div>
+                    <x-ui.sparkline :points="$metric['points']" :unit="$metric['unit']" :max="$metric['unit'] === '%' ? 100 : null" class="w-full" />
+                    @if ($metric['trend'] && abs($metric['trend']['per_day']) >= 0.05)
+                        <p @class(['text-xs', 'text-warning' => $metric['trend']['days_left'] !== null && $metric['trend']['days_left'] <= 14, 'text-muted-foreground' => ! ($metric['trend']['days_left'] !== null && $metric['trend']['days_left'] <= 14)])>{{ sprintf('%+.1f points a day', $metric['trend']['per_day']) }}@if ($metric['trend']['days_left'] !== null), full in about {{ $metric['trend']['days_left'] }} days @endif</p>
+                    @endif
+                </div>
+            @endforeach
+        </div>
+    </x-ui.card>
+@endif
+
 @if ($suggestions->isNotEmpty())
     <x-ui.card title="Suggested memory notes" description="Suggested by the agent from what it read on the machine, which an attacker may have written into logs. Accepted notes are trusted by every future scan: check them against the scan.">
         <ul class="divide-y">

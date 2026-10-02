@@ -8,6 +8,7 @@ use App\Livewire\Auth\Login;
 use App\Livewire\Channels;
 use App\Livewire\Dashboard;
 use App\Livewire\Findings;
+use App\Livewire\Fleet;
 use App\Livewire\Machines;
 use App\Livewire\ScanReport;
 use App\Livewire\Scans;
@@ -34,6 +35,7 @@ Route::post('/logout', function () {
 Route::middleware(['auth', 'can:admin'])->group(function () {
     Route::get('/', Dashboard::class)->name('dashboard');
 
+    Route::get('/fleet', Fleet::class)->name('fleet');
     Route::get('/machines', Machines\Index::class)->name('machines.index');
     Route::get('/machines/create', Machines\Form::class)->name('machines.create');
     Route::get('/machines/{machine}', Machines\Show::class)->name('machines.show');

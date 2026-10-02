@@ -2,6 +2,7 @@
 @php
     $nav = [
         ['Dashboard', 'dashboard', 'lucide-layout-dashboard', 'dashboard'],
+        ['Fleet', 'fleet', 'lucide-layout-grid', 'fleet'],
         ['Machines', 'machines.index', 'lucide-server', 'machines*'],
         ['Sites', 'sites.index', 'lucide-globe', 'sites*'],
         ['Scans', 'scans.index', 'lucide-scan-search', 'scans*'],

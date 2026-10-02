@@ -3,7 +3,12 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
+/**
+ * @property Carbon $recorded_at
+ * @property float $value
+ */
 class MachineMetric extends Model
 {
     public $timestamps = false;
