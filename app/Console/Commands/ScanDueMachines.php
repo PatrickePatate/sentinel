@@ -26,6 +26,8 @@ class ScanDueMachines extends Command
                 ->when($settings['enabled_column'] ?? null, fn ($q, $column) => $q->where($column, true))
                 ->whereNotNull($interval)->where($interval, '>', 0)
                 ->whereNull('revoked_at')->whereNotNull('host_key_fingerprint')
+                // Planned work: someone is changing the machine on purpose, so scans would only report the work in progress.
+                ->where(fn ($q) => $q->whereNull('maintenance_until')->orWhere('maintenance_until', '<=', now()))
                 ->get()
                 ->each(function (Machine $machine) use (&$queued, $profile, $settings, $interval, $last) {
                     $lastAt = $machine->{$last};

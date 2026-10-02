@@ -30,6 +30,10 @@ class Notifier
             return;
         }
 
+        if ($this->quiet($run->machine, 'scan report', $run)) {
+            return;
+        }
+
         $this->dispatch($run, fn () => NotificationChannel::where('enabled', true)->where('notify_scans', true)->get()
             ->filter(fn (NotificationChannel $c) => $urgent || $severity->atLeast($c->minSeverity())),
             new ScanReportNotification($run, $severity, $urgent));
@@ -49,6 +53,18 @@ class Notifier
             && ! $severity->atLeast(Severity::High);
     }
 
+    /** Planned work or a maintenance window: the message is not sent, only logged. Approval requests are never muted. */
+    private function quiet(Machine $machine, string $what, ?AgentRun $run = null): bool
+    {
+        if (! $machine->isQuiet()) {
+            return false;
+        }
+
+        $this->audit->record($machine, $run, 'notification_suppressed', $what, ['reason' => $machine->underPlannedWork() ? 'planned work' : 'maintenance window']);
+
+        return true;
+    }
+
     /** @param array<string, mixed> $digest The weekly summary, for every channel that takes scan notifications. */
     public function digest(array $digest): void
     {
@@ -56,8 +72,13 @@ class Notifier
     }
 
     /** Tells every channel that takes scan notifications. */
-    public function machineAlert(Machine $machine, string $title, string $body, bool $urgent = true): void
+    /** @param bool $evenWhenQuiet For news a maintenance window must not hide, e.g. an action that ran in it and did not work. */
+    public function machineAlert(Machine $machine, string $title, string $body, bool $urgent = true, bool $evenWhenQuiet = false): void
     {
+        if (! $evenWhenQuiet && $this->quiet($machine, $title)) {
+            return;
+        }
+
         $this->dispatch(null, fn () => NotificationChannel::where('enabled', true)->where('notify_scans', true)->get(), new MachineAlertNotification($machine, $title, $body, $urgent), $machine);
     }
 

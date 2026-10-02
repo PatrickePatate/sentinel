@@ -3,10 +3,18 @@
         <x-slot:actions>
             <x-ui.badge :variant="$machine->environment === 'production' ? 'outline' : 'secondary'">{{ $machine->environment }}</x-ui.badge>
             @if ($machine->isRevoked())<x-ui.badge variant="destructive">Revoked</x-ui.badge>@endif
+            @if ($machine->underPlannedWork())<x-ui.badge variant="warning" dot>Planned work until {{ $machine->maintenance_until->format('H:i') }}</x-ui.badge>@elseif ($machine->inMaintenanceWindow())<x-ui.badge variant="info" dot>Maintenance window</x-ui.badge>@endif
             <x-ui.button variant="outline" :href="route('machines.edit', $machine)">@svg('lucide-pencil') Edit</x-ui.button>
             <x-ui.button x-on:click="$dispatch('open-modal', 'scan')" :disabled="$machine->isRevoked() || ! $machine->host_key_fingerprint">@svg('lucide-scan-search') Run a scan</x-ui.button>
             <x-ui.dropdown>
                 <x-slot:trigger><x-ui.button variant="outline" size="icon" aria-label="More">@svg('lucide-ellipsis')</x-ui.button></x-slot:trigger>
+                @if ($machine->underPlannedWork())
+                    <x-ui.dropdown-item wire:click="endPlannedWork">@svg('lucide-bell') End planned work</x-ui.dropdown-item>
+                @else
+                    @foreach (\App\Livewire\Machines\Show::PLANNED_WORK_HOURS as $hours)
+                        <x-ui.dropdown-item wire:click="startPlannedWork({{ $hours }})">@svg('lucide-bell-off') Planned work: mute alerts {{ $hours }}h</x-ui.dropdown-item>
+                    @endforeach
+                @endif
                 @if ($machine->isRevoked())
                     <x-ui.dropdown-item wire:click="restore">@svg('lucide-undo-2') Lift revocation</x-ui.dropdown-item>
                 @else
@@ -31,6 +39,7 @@
                     @endforeach
                     <div><dt class="text-muted-foreground">Web server analysis</dt><dd>@if ($machine->webserver_enabled)On, AI check {{ $machine->fullCheckHours() ? 'every '.$machine->fullCheckHours().'h when healthy' : 'only when the quick check finds a problem' }} @else Off: <a class="underline" href="{{ route('machines.edit', $machine) }}" wire:navigate>enable it</a> @endif</dd></div>
                     <div><dt class="text-muted-foreground">Open issues</dt><dd>@if ($openFindings->isEmpty())None @else<a class="underline" href="{{ route('findings.index', ['machine' => $machine->id]) }}" wire:navigate>{{ $openFindings->count() }}</a>, worst {{ $openFindings->sortByDesc(fn ($f) => $f->severityLevel()->rank())->first()->severity }}@endif</dd></div>
+                    <div><dt class="text-muted-foreground">Maintenance window</dt><dd>@if ($window = $machine->maintenanceWindow()){{ $machine->inMaintenanceWindow() ? 'Open now, until '.$window[1]->format('H:i') : 'Next '.$window[0]->format('D M d, H:i') }} ({{ $machine->maintenance_minutes }} min)@else None: <a class="underline" href="{{ route('machines.edit', $machine) }}" wire:navigate>set one</a>@endif</dd></div>
                     <div><dt class="text-muted-foreground">Autonomous low-risk actions</dt><dd>{{ $machine->isRevoked() ? 'Revoked' : ($machine->autonomy_enabled ? 'Enabled' : 'Off') }}</dd></div>
                 </dl>
                 <div class="mt-5 border-t pt-4 text-sm">

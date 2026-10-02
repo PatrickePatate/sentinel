@@ -150,6 +150,27 @@ class Show extends Component
         $this->dispatch('toast', message: 'Back to the normal rules for '.$action);
     }
 
+    public const PLANNED_WORK_HOURS = [1, 4, 12];
+
+    /** Planned work: mutes scan and machine alerts and skips scheduled scans until it ends (approvals still reach you). */
+    public function startPlannedWork(int $hours): void
+    {
+        abort_unless(in_array($hours, self::PLANNED_WORK_HOURS, true), 422);
+
+        $machine = $this->machine();
+        $machine->update(['maintenance_until' => now()->addHours($hours)]);
+        app(AuditTrail::class)->record($machine, null, 'planned_work_started', "planned work for {$hours}h", ['until' => $machine->maintenance_until->toIso8601String()]);
+        $this->dispatch('toast', message: "Alerts muted for {$hours} hour(s)", description: 'Scheduled scans are skipped meanwhile.', type: 'success');
+    }
+
+    public function endPlannedWork(): void
+    {
+        $machine = $this->machine();
+        $machine->update(['maintenance_until' => null]);
+        app(AuditTrail::class)->record($machine, null, 'planned_work_ended', 'planned work ended');
+        $this->dispatch('toast', message: 'Alerts are back on', type: 'success');
+    }
+
     public function revoke(AccessControl $access): void
     {
         $cancelled = $access->revoke($this->machine());

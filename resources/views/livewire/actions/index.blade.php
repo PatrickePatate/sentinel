@@ -4,7 +4,7 @@
     </x-ui.page-header>
 
     <div class="flex flex-wrap gap-1">
-        @foreach (['pending' => 'Awaiting approval', 'executed' => 'Executed', 'rejected' => 'Rejected', '' => 'All'] as $key => $label)
+        @foreach (['pending' => 'Awaiting approval', 'scheduled' => 'Scheduled', 'executed' => 'Executed', 'rejected' => 'Rejected', '' => 'All'] as $key => $label)
             <x-ui.button size="sm" :variant="$status === (string) $key ? 'default' : 'outline'" wire:click="$set('status', '{{ $key }}')">{{ $label }} @if ($key !== '' && ($counts[$key] ?? 0))<span class="opacity-70">{{ $counts[$key] }}</span>@endif</x-ui.button>
         @endforeach
     </div>
@@ -28,7 +28,15 @@
                         @if (in_array($action->action, $trustable, true) && ! $action->machine->trusts($action->action))
                             <x-ui.button size="sm" variant="outline" :x-on:click="'$store.confirm.ask({ title: \'Always allow this action on this machine?\', message: '.\Illuminate\Support\Js::from('Runs it now, then lets the agent run '.$action->action.' on '.$action->machine->name.' without asking again (the risk gate classifier is skipped; the autonomous action quota and the flapping guard still apply). You can revoke this on the machine page.').', label: \'Run and always allow\', action: () => $wire.approve('.$action->id.', true) })'" title="@if ($ranBefore->get($action->machine_id.':'.$action->action, 0) > 0)Approved and run successfully {{ $ranBefore->get($action->machine_id.':'.$action->action) }} time(s) before on this machine @endif">@svg('lucide-shield-check') Approve and always allow</x-ui.button>
                         @endif
+                        @if ($action->machine->hasMaintenanceWindow())
+                            <x-ui.button size="sm" variant="outline" :x-on:click="'$store.confirm.ask({ title: \'Run it in the maintenance window?\', message: '.\Illuminate\Support\Js::from($action->machine->name.': '.$action->command.' at '.$action->machine->maintenanceWindow()[0]->format('D M d, H:i')).', label: \'Approve for the window\', action: () => $wire.scheduleForWindow('.$action->id.') })'">@svg('lucide-calendar-clock') Approve for the window</x-ui.button>
+                        @endif
                         <x-ui.button size="sm" variant="outline" wire:click="reject({{ $action->id }})">@svg('lucide-x') Reject</x-ui.button>
+                    </x-slot:footer>
+                @elseif ($action->status === 'scheduled')
+                    <x-slot:footer>
+                        <span class="text-sm text-muted-foreground">Runs at the start of the window, {{ $action->run_after?->format('D M d, H:i') }}.</span>
+                        <x-ui.button size="sm" variant="outline" wire:click="reject({{ $action->id }})">@svg('lucide-x') Cancel</x-ui.button>
                     </x-slot:footer>
                 @endif
             </x-ui.card>

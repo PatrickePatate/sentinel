@@ -30,23 +30,27 @@ class AgentRun extends Model
         return in_array($this->status, ['queued', 'running'], true);
     }
 
+    /** @return BelongsTo<Machine, $this> */
     public function machine(): BelongsTo
     {
         return $this->belongsTo(Machine::class);
     }
 
     /** The scan this follow-up continues. */
+    /** @return BelongsTo<self, $this> */
     public function parent(): BelongsTo
     {
         return $this->belongsTo(self::class, 'parent_run_id');
     }
 
     /** Follow-up turns asked from this scan's report, oldest first. */
+    /** @return HasMany<self, $this> */
     public function followUps(): HasMany
     {
         return $this->hasMany(self::class, 'parent_run_id')->orderBy('id');
     }
 
+    /** @return HasMany<PendingAction, $this> */
     public function pendingActions(): HasMany
     {
         return $this->hasMany(PendingAction::class);

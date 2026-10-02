@@ -46,6 +46,15 @@ class Form extends Component
 
     public bool $autonomy_medium = false;
 
+    /** @var list<int> ISO weekdays of the maintenance window. */
+    public array $maintenance_days = [];
+
+    public string $maintenance_start = '03:00';
+
+    public int $maintenance_minutes = 120;
+
+    public const WINDOW_LENGTHS = [30 => '30 minutes', 60 => '1 hour', 120 => '2 hours', 240 => '4 hours', 480 => '8 hours'];
+
     public function mount(?Machine $machine = null): void
     {
         if ($machine?->exists) {
@@ -61,6 +70,9 @@ class Form extends Component
             $this->gate_max_destructive = $machine->gate_max_destructive === null ? null : (string) $machine->gate_max_destructive;
             $this->gate_min_reversible = $machine->gate_min_reversible === null ? null : (string) $machine->gate_min_reversible;
             $this->gate_max_actions = $machine->gate_max_actions === null ? null : (string) $machine->gate_max_actions;
+            $this->maintenance_days = array_map('intval', $machine->maintenance_days ?? []);
+            $this->maintenance_start = $machine->maintenance_start ?? '03:00';
+            $this->maintenance_minutes = $machine->maintenance_minutes ?? 120;
         }
     }
 
@@ -89,7 +101,14 @@ class Form extends Component
             'gate_max_destructive' => ['nullable', 'numeric', 'between:0,0.2'],
             'gate_min_reversible' => ['nullable', 'numeric', 'between:0.5,1'],
             'gate_max_actions' => ['nullable', 'integer', 'between:0,10'],
+            'maintenance_days' => ['array'],
+            'maintenance_days.*' => ['integer', 'between:1,7', 'distinct'],
+            'maintenance_start' => ['required', 'date_format:H:i'],
+            'maintenance_minutes' => ['required', 'integer', Rule::in(array_keys(self::WINDOW_LENGTHS))],
         ]);
+
+        // No day picked: no window at all.
+        $data['maintenance_days'] = array_values(array_map('intval', $data['maintenance_days'])) ?: null;
 
         // Moderate actions only make sense on top of autonomy itself.
         $data['autonomy_medium'] = $data['autonomy_enabled'] && $data['autonomy_medium'];

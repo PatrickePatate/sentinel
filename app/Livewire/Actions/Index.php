@@ -54,6 +54,20 @@ class Index extends Component
         }
     }
 
+    public function scheduleForWindow(int $id, ActionExecutor $executor): void
+    {
+        $pending = PendingAction::with('machine')->whereKey($id)->where('status', 'pending')->first();
+
+        if (! $pending || ! $pending->machine->hasMaintenanceWindow()) {
+            $this->dispatch('toast', message: 'This action cannot be scheduled', type: 'warning');
+
+            return;
+        }
+
+        $executor->schedule($pending);
+        $this->dispatch('toast', message: 'Scheduled for the maintenance window', description: $pending->fresh()->run_after->format('D M d, H:i'), type: 'success');
+    }
+
     /** An explicit grant, only for actions whose root wrapper enforces its own safeguards, and revocable on the machine page. */
     private function trust(PendingAction $pending): void
     {
@@ -71,7 +85,7 @@ class Index extends Component
 
     public function reject(int $id, ActionExecutor $executor): void
     {
-        if ($pending = PendingAction::whereKey($id)->where('status', 'pending')->first()) {
+        if ($pending = PendingAction::whereKey($id)->whereIn('status', ['pending', 'scheduled'])->first()) {
             $executor->reject($pending);
             $this->dispatch('toast', message: 'Action rejected');
         }

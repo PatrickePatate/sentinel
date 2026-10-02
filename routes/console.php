@@ -12,6 +12,7 @@ Artisan::command('inspire', function () {
 
 Schedule::command('sentinel:scan-due')->everyMinute()->withoutOverlapping()->onOneServer();
 Schedule::command('sentinel:collect-metrics')->cron('*/'.max(5, (int) config('sentinel.metrics.interval_minutes')).' * * * *')->withoutOverlapping()->onOneServer();
+Schedule::command('sentinel:run-scheduled-actions')->everyMinute()->withoutOverlapping()->onOneServer();
 Schedule::command('sentinel:check-sites')->everyFiveMinutes()->withoutOverlapping()->onOneServer();
 
 // An approved action whose worker died mid-run would stay "running" forever: close it, the audit log has the rest.

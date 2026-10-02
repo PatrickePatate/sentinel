@@ -114,7 +114,7 @@ class ActionExecutor
         }
 
         // The same fix proposed twice (or by two scans) is one decision for the human.
-        $existing = PendingAction::where('machine_id', $machine->id)->where('status', 'pending')->where('command', $command)->first();
+        $existing = PendingAction::where('machine_id', $machine->id)->whereIn('status', ['pending', 'scheduled'])->where('command', $command)->first();
 
         if ($existing) {
             return "ALREADY_PENDING (#{$existing->id}): this exact action is already waiting for approval.";
@@ -145,9 +145,9 @@ class ActionExecutor
      * reviewed; the pending -> running transition is atomic so it can only run once.
      */
     /** @param array<string, mixed> $context Extra audit properties (e.g. who approved, through which channel). */
-    public function approve(PendingAction $pending, array $context = []): string
+    public function approve(PendingAction $pending, array $context = [], string $from = 'pending'): string
     {
-        $this->claim($pending);
+        $this->claim($pending, 'running', $from);
 
         $machine = $pending->machine;
 
@@ -174,10 +174,50 @@ class ActionExecutor
         return $output;
     }
 
+    /**
+     * Approves an action to run at the start of the machine's next maintenance window instead of now. When it runs it
+     * goes through approve(): the command is derived again and must still be the one that was reviewed.
+     *
+     * @param  array<string, mixed>  $context
+     */
+    public function schedule(PendingAction $pending, array $context = []): void
+    {
+        $window = $pending->machine->maintenanceWindow();
+        abort_unless($window !== null, 422, 'This machine has no maintenance window.');
+
+        $this->claim($pending, 'scheduled');
+        $pending->update(['run_after' => $window[0]]);
+        $this->audit->record($pending->machine, $pending->agentRun, 'action_scheduled', $pending->action, ['pending_action_id' => $pending->id, 'run_after' => $window[0]->toIso8601String()] + $context);
+        Realtime::push('actions');
+    }
+
+    /** Runs the scheduled actions whose window has come. One whose window was missed (scheduler down) waits for the next one. */
+    public function runScheduled(): int
+    {
+        $ran = 0;
+
+        foreach (PendingAction::with('machine')->where('status', 'scheduled')->where('run_after', '<=', now())->get() as $pending) {
+            if (! $pending->machine->inMaintenanceWindow()) {
+                $pending->update(['run_after' => $pending->machine->maintenanceWindow()[0] ?? now()->addDay()]);
+
+                continue;
+            }
+
+            try {
+                $this->approve($pending, ['scheduled' => true], from: 'scheduled');
+                $ran++;
+            } catch (Throwable $e) {
+                report($e);
+            }
+        }
+
+        return $ran;
+    }
+
     /** @param array<string, mixed> $context */
     public function reject(PendingAction $pending, array $context = []): void
     {
-        $this->claim($pending, 'rejected');
+        $this->claim($pending, 'rejected', $pending->status === 'scheduled' ? 'scheduled' : 'pending');
 
         $this->audit->record($pending->machine, null, 'action_rejected', $pending->action, ['pending_action_id' => $pending->id] + $context);
         Realtime::push('actions');
@@ -187,14 +227,15 @@ class ActionExecutor
      * Atomically moves a pending action out of "pending": a double click or two admins
      * at once cannot both win. Expired requests are closed instead of run.
      */
-    private function claim(PendingAction $pending, string $to = 'running'): void
+    private function claim(PendingAction $pending, string $to = 'running', string $from = 'pending'): void
     {
         $ttl = config('sentinel.gate.pending_ttl_hours');
 
+        // A request nobody answered expires; one a human approved for the window does not.
         PendingAction::whereKey($pending->id)->where('status', 'pending')->where('created_at', '<', now()->subHours($ttl))
             ->update(['status' => 'expired', 'decided_at' => now()]);
 
-        $claimed = PendingAction::whereKey($pending->id)->where('status', 'pending')
+        $claimed = PendingAction::whereKey($pending->id)->where('status', $from)
             ->update(['status' => $to, 'decided_at' => $to === 'rejected' ? now() : null]);
 
         abort_unless($claimed === 1, 409, 'Action already decided or expired.');
@@ -260,7 +301,7 @@ class ActionExecutor
         $message = "\nVERIFICATION FAILED: expected {$verification->expectation}, the check said: ".trim(mb_strcut($result->output, 0, 300));
         $message .= $verification->rollback ? $this->rollback($machine, $run, $actionName, $verification->rollback) : '';
 
-        app(Notifier::class)->machineAlert($machine, "{$actionName} did not have the expected effect on {$machine->name}", trim($message));
+        app(Notifier::class)->machineAlert($machine, "{$actionName} did not have the expected effect on {$machine->name}", trim($message), evenWhenQuiet: true);
 
         return $message;
     }
