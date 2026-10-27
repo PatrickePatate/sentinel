@@ -6,9 +6,9 @@
             <div class="flex items-center gap-1">
                 @can('admin')
                     @if ($machine->unguardedActive())
-                        <x-ui.button variant="outline" size="sm" wire:click="toggleUnguarded" wire:loading.attr="disabled" wire:target="toggleUnguarded">@svg('lucide-lock') End unguarded session</x-ui.button>
+                        <x-ui.button variant="outline" size="sm" wire:click="closeUnguarded" wire:loading.attr="disabled" wire:target="closeUnguarded">@svg('lucide-lock') End unguarded session</x-ui.button>
                     @elseif (! $machine->isRevoked())
-                        <x-ui.button variant="outline" size="sm" wire:loading.attr="disabled" wire:target="toggleUnguarded" x-on:click="$dispatch('open-modal', 'unguarded')">@svg('lucide-lock-open') Unguarded session</x-ui.button>
+                        <x-ui.button variant="outline" size="sm" wire:loading.attr="disabled" wire:target="openUnguarded" x-on:click="$dispatch('open-modal', 'unguarded')">@svg('lucide-lock-open') Unguarded session</x-ui.button>
                     @endif
                 @endcan
                 @if ($messages->isNotEmpty())<x-ui.button variant="ghost" size="sm" x-on:click="$store.confirm.ask({ title: 'Clear this conversation?', label: 'Clear', action: () => $wire.clear() })">@svg('lucide-trash-2') Clear</x-ui.button>@endif
@@ -104,9 +104,10 @@
 
 @can('admin')
     <x-ui.modal name="unguarded" title="Start an unguarded session?" description="{{ $machine->name }} · {{ $machine->environment }}">
-        <div x-data="{ understood: false }" x-on:open-modal.window="understood = false" class="grid gap-4">
+        {{-- The proof stays in Alpine and goes as a call argument: it is never part of the component's state. --}}
+        <div x-data="{ understood: false, proof: '', busy: false }" x-on:open-modal.window="understood = false; proof = ''" class="grid gap-4">
             <ul class="grid gap-2.5 text-sm">
-                <li class="flex gap-2.5">@svg('lucide-key-round', 'mt-0.5 size-4 shrink-0 text-muted-foreground')<span>For <strong>{{ (int) config('sentinel.unguarded.lease_minutes') }} minutes</strong> the machine grants Sentinel root. The lease also ends by itself on the machine.</span></li>
+                <li class="flex gap-2.5">@svg('lucide-key-round', 'mt-0.5 size-4 shrink-0 text-muted-foreground')<span>For <strong>{{ (int) config('sentinel.unguarded.lease_minutes') }} minutes</strong> the machine runs commands you approve as root. The lease ends by itself on the machine, and with any reboot.</span></li>
                 <li class="flex gap-2.5">@svg('lucide-terminal', 'mt-0.5 size-4 shrink-0 text-muted-foreground')<span>The agent can propose <strong>any shell command</strong>. Nothing runs until you approve that exact command in the chat.</span></li>
                 <li class="flex gap-2.5">@svg('lucide-shield-off', 'mt-0.5 size-4 shrink-0 text-destructive')<span>Approved commands are <strong>not risk-checked</strong>: they can delete data or stop services.</span></li>
                 <li class="flex gap-2.5">@svg('lucide-bug', 'mt-0.5 size-4 shrink-0 text-destructive')<span>The agent reads text from the machine, which an attacker may have planted. Read every command before approving.</span></li>
@@ -116,9 +117,16 @@
                 <input type="checkbox" x-model="understood" class="mt-0.5 size-4 shrink-0 accent-destructive">
                 <span>I understand, and I want to start an unguarded session on this {{ $machine->environment }} machine.</span>
             </label>
+            @if (auth()->user()->hasTwoFactor())
+                <label class="grid gap-1.5 text-sm"><span class="font-medium">Authentication code</span>
+                    <x-ui.input x-model="proof" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="123456" /></label>
+            @else
+                <label class="grid gap-1.5 text-sm"><span class="font-medium">Your password</span>
+                    <x-ui.input type="password" x-model="proof" autocomplete="current-password" /></label>
+            @endif
             <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <x-ui.button variant="outline" x-on:click="$dispatch('close-modal')">Cancel</x-ui.button>
-                <x-ui.button variant="destructive" x-bind:disabled="! understood" x-on:click="$wire.toggleUnguarded(); $dispatch('close-modal')">@svg('lucide-lock-open') Start unguarded session</x-ui.button>
+                <x-ui.button variant="destructive" x-bind:disabled="! understood || proof === '' || busy" x-on:click="busy = true; $wire.openUnguarded(proof).then(started => { busy = false; proof = ''; if (started) $dispatch('close-modal') })">@svg('lucide-lock-open') Start unguarded session</x-ui.button>
             </div>
         </div>
     </x-ui.modal>

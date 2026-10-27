@@ -15,6 +15,7 @@ use App\Ssh\Tools\InvalidToolArguments;
 use App\Support\Realtime;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
+use RuntimeException;
 use Spatie\Activitylog\Models\Activity;
 use Throwable;
 
@@ -222,7 +223,16 @@ class ActionExecutor
             return 'ERROR: '.$message;
         }
 
-        $output = $this->run($machine, $pending->agentRun, $pending->action, $command, ['approved_pending_action_id' => $pending->id, 'arguments' => $pending->arguments ?? []] + $context, 'action_approved');
+        try {
+            // A raw command goes to the machine inside a token signed for this run; the audit keeps the reviewed command.
+            $send = $pending->action === 'run_command' ? app(UnguardedSession::class)->runCommand($machine, (string) ($pending->arguments['command'] ?? '')) : $command;
+        } catch (RuntimeException $e) {
+            $pending->update(['status' => 'failed', 'output' => $e->getMessage(), 'decided_at' => now()]);
+
+            return 'ERROR: '.$e->getMessage();
+        }
+
+        $output = $this->run($machine, $pending->agentRun, $pending->action, $command, ['approved_pending_action_id' => $pending->id, 'arguments' => $pending->arguments ?? []] + $context, 'action_approved', $send);
         $pending->update(['status' => str_starts_with($output, 'ERROR') || str_contains($output, "\nVERIFICATION FAILED") ? 'failed' : 'executed', 'output' => $output, 'decided_at' => now()]);
         Realtime::push('actions');
 
@@ -347,9 +357,10 @@ class ActionExecutor
     }
 
     /**
-     * A raw command is approved by an administrator looking at it, in the dashboard, while the session that proposed
-     * it is still open: approving one is running anything as root, which opening a session already needs the admin
-     * role for. Anything else (an approver, Telegram, the command line, a closed or later session) never runs it.
+     * A raw command is approved by an administrator looking at it in the machine's chat (the caller passes
+     * ['surface' => 'chat']), while the session that proposed it is still open: approving one is running anything as
+     * root, which opening a session already needs the admin role for. Anything else (an approver, the Actions page,
+     * Telegram, the command line, a closed or later session) never runs it.
      *
      * @param  array<string, mixed>  $context
      */
@@ -357,8 +368,8 @@ class ActionExecutor
     {
         $denied = fn (string $reason) => $this->audit->record($pending->machine, $pending->agentRun, 'action_approval_denied', $pending->action, ['pending_action_id' => $pending->id, 'reason' => $reason] + $context);
 
-        if (isset($context['via']) || ! auth()->check()) {
-            $denied('raw commands are approved in the dashboard only');
+        if (isset($context['via']) || ! auth()->check() || ($context['surface'] ?? null) !== 'chat') {
+            $denied('raw commands are approved in the machine chat only');
 
             return 'ERROR: commands of an unguarded session are approved in the dashboard chat only.';
         }
@@ -383,12 +394,12 @@ class ActionExecutor
     }
 
     /** @param array<string, mixed> $context */
-    private function run(Machine $machine, ?AgentRun $run, string $action, string $command, array $context, string $event): string
+    private function run(Machine $machine, ?AgentRun $run, string $action, string $command, array $context, string $event, ?string $send = null): string
     {
         $timeout = $action === 'run_command' ? (int) config('sentinel.unguarded.command_timeout') : SafeExecutor::TIMEOUT_SECONDS;
 
         try {
-            $result = $this->transport->run($machine, $command, $timeout);
+            $result = $this->transport->run($machine, $send ?? $command, $timeout);
         } catch (Throwable $e) {
             $this->audit->record($machine, $run, 'action_failed', $action, $context + ['command' => $command, 'error' => $e->getMessage()]);
 

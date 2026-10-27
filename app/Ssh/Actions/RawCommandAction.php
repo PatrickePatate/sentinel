@@ -8,11 +8,12 @@ use Illuminate\Contracts\JsonSchema\JsonSchema;
 /**
  * Any shell command, run as root. Only reachable during an unguarded session, and never without a human approving that
  * exact command: the agent can only file it (see ActionExecutor::proposeCommand), it never runs by itself.
+ *
+ * command() is what the human reviews: what runs as root. It is sent to the machine inside a token signed for that one
+ * run (see UnguardedSession::runCommand), never through sudo, which the Sentinel account has no shell rights in.
  */
 class RawCommandAction implements ActionTool, HumanOnly
 {
-    use UsesSudo;
-
     public const MAX_LENGTH = 2000;
 
     public function name(): string
@@ -45,6 +46,6 @@ class RawCommandAction implements ActionTool, HumanOnly
             throw new InvalidToolArguments('command must be a non-empty string of at most '.self::MAX_LENGTH.' characters.');
         }
 
-        return $this->sudo().'bash -c '.escapeshellarg($command).' 2>&1';
+        return 'bash -c '.escapeshellarg($command);
     }
 }

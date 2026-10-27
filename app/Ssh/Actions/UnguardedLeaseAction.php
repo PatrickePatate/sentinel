@@ -6,7 +6,10 @@ use App\Ssh\Provisioning\RequiresSudo;
 use App\Ssh\Tools\InvalidToolArguments;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 
-/** Opens or closes the time-boxed root lease behind an unguarded chat session (see UnguardedSession). */
+/**
+ * Opens or closes the time-boxed lease behind an unguarded chat session (see UnguardedSession). The same wrapper runs
+ * the approved commands, each with its own signed token: see signedCommand().
+ */
 class UnguardedLeaseAction implements ActionTool, HumanOnly, RequiresSudo
 {
     use UsesSudo;
@@ -56,7 +59,13 @@ class UnguardedLeaseAction implements ActionTool, HumanOnly, RequiresSudo
             throw new InvalidToolArguments('unguarded_open takes a base64 token and signature.');
         }
 
-        return $this->sudo().self::WRAPPER.' on '.escapeshellarg($token).' '.escapeshellarg($signature).' 2>&1';
+        return $this->signedCommand('on', $token, $signature);
+    }
+
+    /** The wrapper call for a signed token: 'on' opens the lease, 'run' runs the one command its token carries. */
+    public function signedCommand(string $verb, string $token, string $signature): string
+    {
+        return $this->sudo().self::WRAPPER.' '.$verb.' '.escapeshellarg($token).' '.escapeshellarg($signature).' 2>&1';
     }
 
     public function sudoRules(): array
