@@ -54,7 +54,7 @@
                 <div class="flex items-center gap-3 text-xs text-muted-foreground"><span class="h-px flex-1 bg-border"></span><span class="flex items-center gap-1.5">@svg('lucide-terminal', 'size-3.5') Proposed commands</span><span class="h-px flex-1 bg-border"></span></div>
             @endif
             @foreach ($commands->reverse() as $command)
-                @php $open = $command->status === 'pending' && $machine->unguardedActive(); @endphp
+                @php $open = $command->status === 'pending' && $machine->unguardedActive() && $command->unguarded_session === $machine->unguarded_session; @endphp
                 <div wire:key="c{{ $command->id }}" @class(['space-y-2 rounded-xl border bg-card px-4 py-3 text-sm shadow-xs', 'border-warning/50' => $open, 'border-destructive/30' => ! $open && $command->status === 'failed'])>
                     <div class="flex items-center justify-between gap-2">
                         <span class="flex items-center gap-1.5 font-medium">@svg('lucide-terminal', 'size-4') Command #{{ $command->id }} <span class="font-normal text-muted-foreground">as root</span></span>
@@ -66,7 +66,7 @@
                     @if ($open)
                         @can('approve')
                             <div class="flex gap-2">
-                                <x-ui.button size="sm" variant="destructive" wire:click="approveCommand({{ $command->id }})" wire:loading.attr="disabled" wire:target="approveCommand({{ $command->id }})">@svg('lucide-play') Approve and run as root</x-ui.button>
+                                @can('admin')<x-ui.button size="sm" variant="destructive" wire:click="approveCommand({{ $command->id }})" wire:loading.attr="disabled" wire:target="approveCommand({{ $command->id }})">@svg('lucide-play') Approve and run as root</x-ui.button>@endcan
                                 <x-ui.button size="sm" variant="outline" wire:click="rejectCommand({{ $command->id }})" wire:loading.attr="disabled">Reject</x-ui.button>
                             </div>
                         @endcan

@@ -17,13 +17,16 @@ class BundleSigner
 
     private ?string $secretKey = null;
 
-    /** The armored signature of $message, as `ssh-keygen -Y sign` would print it. */
-    public function sign(string $message): string
+    /**
+     * The armored signature of $message, as `ssh-keygen -Y sign -n $namespace` would print it. Each use has its own
+     * namespace, so a bundle signature can never be passed off as a lease token's, or the other way round.
+     */
+    public function sign(string $message, string $namespace = self::NAMESPACE): string
     {
-        $signed = 'SSHSIG'.$this->string(self::NAMESPACE).$this->string('').$this->string('sha512').$this->string(hash('sha512', $message, true));
+        $signed = 'SSHSIG'.$this->string($namespace).$this->string('').$this->string('sha512').$this->string(hash('sha512', $message, true));
         $signature = sodium_crypto_sign_detached($signed, $this->secretKey());
 
-        $blob = 'SSHSIG'.pack('N', 1).$this->string($this->publicKeyBlob()).$this->string(self::NAMESPACE).$this->string('')
+        $blob = 'SSHSIG'.pack('N', 1).$this->string($this->publicKeyBlob()).$this->string($namespace).$this->string('')
             .$this->string('sha512').$this->string($this->string('ssh-ed25519').$this->string($signature));
 
         return "-----BEGIN SSH SIGNATURE-----\n".chunk_split(base64_encode($blob), 70, "\n")."-----END SSH SIGNATURE-----\n";
@@ -32,7 +35,13 @@ class BundleSigner
     /** The line of the updater's allowed_signers file. */
     public function allowedSigner(): string
     {
-        return self::PRINCIPAL.' namespaces="'.self::NAMESPACE.'" ssh-ed25519 '.base64_encode($this->publicKeyBlob());
+        return self::PRINCIPAL.' namespaces="'.self::NAMESPACE.'" '.$this->publicKey();
+    }
+
+    /** The public key, in the "ssh-ed25519 <base64>" form of an allowed_signers line. */
+    public function publicKey(): string
+    {
+        return 'ssh-ed25519 '.base64_encode($this->publicKeyBlob());
     }
 
     private function publicKeyBlob(): string

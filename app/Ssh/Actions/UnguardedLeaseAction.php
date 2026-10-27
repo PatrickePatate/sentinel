@@ -37,13 +37,26 @@ class UnguardedLeaseAction implements ActionTool, HumanOnly, RequiresSudo
         return [];
     }
 
+    /** Opening takes the signed lease token (see UnguardedSession::open), both base64; closing takes nothing. */
     public function command(array $arguments): string
     {
-        if ($arguments !== []) {
-            throw new InvalidToolArguments("{$this->name()} takes no arguments.");
+        if (! $this->open) {
+            if ($arguments !== []) {
+                throw new InvalidToolArguments('unguarded_close takes no arguments.');
+            }
+
+            return $this->sudo().self::WRAPPER.' off 2>&1';
         }
 
-        return $this->sudo().self::WRAPPER.($this->open ? ' on' : ' off').' 2>&1';
+        $token = $arguments['token'] ?? null;
+        $signature = $arguments['signature'] ?? null;
+
+        if (array_keys($arguments) !== ['token', 'signature'] || ! is_string($token) || ! is_string($signature)
+            || ! preg_match('#^[A-Za-z0-9+/=]{1,1024}$#', $token) || ! preg_match('#^[A-Za-z0-9+/=]{1,4096}$#', $signature)) {
+            throw new InvalidToolArguments('unguarded_open takes a base64 token and signature.');
+        }
+
+        return $this->sudo().self::WRAPPER.' on '.escapeshellarg($token).' '.escapeshellarg($signature).' 2>&1';
     }
 
     public function sudoRules(): array

@@ -175,6 +175,7 @@ class ActionExecutor
             'arguments' => ['command' => $command],
             'command' => $built,
             'risk' => $action->risk()->value,
+            'unguarded_session' => $machine->unguarded_session,
             'reason' => 'Proposed by the agent in an unguarded session (its own words, not verified: it may repeat text planted in the logs it read): '
                 .(mb_substr(trim($rationale), 0, 500) ?: 'no rationale given'),
         ]);
@@ -346,21 +347,36 @@ class ActionExecutor
     }
 
     /**
-     * A raw command is approved by a person looking at it, in the dashboard, while the session that proposed it is
-     * still open. Anything else (Telegram, the command line, a closed session) leaves it pending, never runs it.
+     * A raw command is approved by an administrator looking at it, in the dashboard, while the session that proposed
+     * it is still open: approving one is running anything as root, which opening a session already needs the admin
+     * role for. Anything else (an approver, Telegram, the command line, a closed or later session) never runs it.
      *
      * @param  array<string, mixed>  $context
      */
     private function rawCommandRefusal(PendingAction $pending, array $context): ?string
     {
+        $denied = fn (string $reason) => $this->audit->record($pending->machine, $pending->agentRun, 'action_approval_denied', $pending->action, ['pending_action_id' => $pending->id, 'reason' => $reason] + $context);
+
         if (isset($context['via']) || ! auth()->check()) {
-            $this->audit->record($pending->machine, $pending->agentRun, 'action_approval_denied', $pending->action, ['pending_action_id' => $pending->id, 'reason' => 'raw commands are approved in the dashboard only'] + $context);
+            $denied('raw commands are approved in the dashboard only');
 
             return 'ERROR: commands of an unguarded session are approved in the dashboard chat only.';
         }
 
+        if (! auth()->user()->can('admin')) {
+            $denied('raw commands are approved by an administrator only');
+
+            return 'ERROR: only an administrator can approve a command of an unguarded session.';
+        }
+
         if (! $pending->machine->unguardedActive()) {
             return 'ERROR: the unguarded session is not open (it ended or expired). Start a new one in the chat, and have the agent propose the command again.';
+        }
+
+        if ($pending->unguarded_session === null || $pending->unguarded_session !== $pending->machine->unguarded_session) {
+            $denied('proposed in an earlier unguarded session');
+
+            return 'ERROR: this command was proposed in an earlier unguarded session. Have the agent propose it again in this one.';
         }
 
         return null;

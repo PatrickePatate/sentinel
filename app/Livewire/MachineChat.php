@@ -111,9 +111,10 @@ class MachineChat extends Component
         $this->dispatch('toast', message: 'Unguarded session started', description: 'Root lease until '.$machine->fresh()->unguarded_until->format('H:i').'. Every command still needs your approval.', type: 'warning');
     }
 
+    /** Running a raw command is running anything as root: an administrator approves it, like opening the session. */
     public function approveCommand(int $id, ActionExecutor $executor): void
     {
-        $this->allow('approve');
+        $this->allow('admin');
         $pending = $this->commands()->firstWhere('id', $id);
 
         if (! $pending || $pending->status !== 'pending') {

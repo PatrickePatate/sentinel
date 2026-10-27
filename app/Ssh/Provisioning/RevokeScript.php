@@ -42,6 +42,10 @@ fi
 
 # 2. Privileges: sudo policy and root wrappers
 systemctl stop sentinel-unguarded-expire.timer sentinel-unguarded-expire.service 2>/dev/null || true
+systemctl disable --now sentinel-unguarded-end.timer 2>/dev/null || true
+rm -f /etc/systemd/system/sentinel-unguarded-end.timer /etc/systemd/system/sentinel-unguarded-end.service
+systemctl daemon-reload 2>/dev/null || true
+rm -rf /var/lib/sentinel-unguarded
 rm -f /etc/sudoers.d/sentinel /etc/sudoers.d/sentinel-unguarded /etc/sudoers.d/.sentinel-*
 rm -f /usr/local/sbin/sentinel-*
 

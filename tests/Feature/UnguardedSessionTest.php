@@ -8,12 +8,15 @@ use App\Models\User;
 use App\Ssh\AccessControl;
 use App\Ssh\ActionExecutor;
 use App\Ssh\CommandResult;
+use App\Ssh\Provisioning\BundleSigner;
 use App\Ssh\Provisioning\ClientBundle;
 use App\Ssh\Provisioning\SudoersBuilder;
 use App\Ssh\SshTransport;
 use App\Ssh\UnguardedSession;
+use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Str;
 use Laravel\Ai\Contracts\Tool;
 use Livewire\Livewire;
 use Spatie\Activitylog\Models\Activity;
@@ -38,6 +41,37 @@ function leaseTransport(array &$commands, ?string $failing = null): void
             return $this->failing && str_contains($command, $this->failing) ? new CommandResult('boom', 4) : new CommandResult('ok', 0);
         }
     });
+}
+
+/** A machine with an open unguarded session, as UnguardedSession::open() leaves it. */
+function unguardedMachine(array $attributes = []): Machine
+{
+    return Machine::factory()->create(['unguarded_until' => now()->addMinutes(5), 'unguarded_session' => (string) Str::uuid(), ...$attributes]);
+}
+
+/** The host key fingerprint of the machine running the tests, as the wrapper computes it. */
+function localHostKey(): ?string
+{
+    $key = '/etc/ssh/ssh_host_ed25519_key.pub';
+
+    return is_readable($key) ? explode(' ', Process::run(['ssh-keygen', '-lf', $key])->output())[1] ?? null : null;
+}
+
+/** Runs the lease wrapper's non-root "check" on a base64 token and signature. */
+function checkLease(string $wrapper, string $token, string $signature): ProcessResult
+{
+    $file = tempnam(sys_get_temp_dir(), 'ung');
+    file_put_contents($file, $wrapper);
+    $result = Process::run(['bash', $file, 'check', $token, $signature]);
+    unlink($file);
+
+    return $result;
+}
+
+/** @return array{0: string, 1: string} A lease line signed by the current signing key, both base64. */
+function signedLease(string $line, string $namespace = UnguardedSession::NAMESPACE): array
+{
+    return [base64_encode($line), base64_encode(app(BundleSigner::class)->sign($line, $namespace))];
 }
 
 function agentToolNames(Machine $machine, bool $unguarded): array
@@ -70,20 +104,22 @@ it('ships a lease wrapper that is valid bash with the lease length filled in', f
     $file = tempnam(sys_get_temp_dir(), 'ung');
     file_put_contents($file, $body);
 
-    expect($body)->toContain('ttl=45')->not->toContain('__UNGUARDED_TTL__')
+    expect($body)->toContain('max_minutes=45', app(BundleSigner::class)->publicKey())->not->toContain('__UNGUARDED_TTL__', '__SIGNING_KEY__')
         ->and(Process::run(['bash', '-n', $file])->successful())->toBeTrue();
     unlink($file);
 });
 
-it('opens the lease through the wrapper and records the session', function () {
+it('opens the lease through the wrapper with a signed token and records the session', function () {
     $commands = [];
     leaseTransport($commands);
-    $machine = Machine::factory()->create();
+    $machine = Machine::factory()->create(['host_key_fingerprint' => 'SHA256:'.str_repeat('A', 43)]);
 
     app(UnguardedSession::class)->open($machine);
 
-    expect($commands)->toBe(['sudo -n /usr/local/sbin/sentinel-unguarded on 2>&1'])
+    expect($commands)->toHaveCount(1)
+        ->and($commands[0])->toMatch("#^sudo -n /usr/local/sbin/sentinel-unguarded on '[A-Za-z0-9+/=]+' '[A-Za-z0-9+/=]+' 2>&1$#")
         ->and($machine->fresh()->unguardedActive())->toBeTrue()
+        ->and($machine->fresh()->unguarded_session)->not->toBeNull()
         ->and(Activity::where('event', 'unguarded_opened')->count())->toBe(1);
 
     app(UnguardedSession::class)->close($machine);
@@ -95,7 +131,7 @@ it('opens the lease through the wrapper and records the session', function () {
 it('does not consider a session open when the machine refuses the lease', function () {
     $commands = [];
     leaseTransport($commands, failing: 'sentinel-unguarded on');
-    $machine = Machine::factory()->create();
+    $machine = Machine::factory()->create(['host_key_fingerprint' => 'SHA256:'.str_repeat('A', 43)]);
 
     expect(fn () => app(UnguardedSession::class)->open($machine))->toThrow(RuntimeException::class, 'refused the lease')
         ->and($machine->fresh()->unguardedActive())->toBeFalse();
@@ -110,7 +146,7 @@ it('refuses a proposed command when no session is open, and files it without run
     expect($executor->proposeCommand($machine, 'ls /root', null, 'look around'))->toStartWith('REFUSED')
         ->and(PendingAction::count())->toBe(0);
 
-    $machine->forceFill(['unguarded_until' => now()->addMinutes(5)])->save();
+    $machine->forceFill(['unguarded_until' => now()->addMinutes(5), 'unguarded_session' => (string) Str::uuid()])->save();
 
     expect($executor->proposeCommand($machine, 'ls /root', null, 'look around'))->toStartWith('PROPOSED')
         ->and($executor->proposeCommand($machine, 'ls /root', null, 'look around'))->toStartWith('ALREADY_PENDING')
@@ -126,8 +162,8 @@ it('refuses a proposed command when no session is open, and files it without run
 it('runs an approved command as root, quoted as one argument', function () {
     $commands = [];
     leaseTransport($commands);
-    $this->actingAs(User::factory()->approver()->create());
-    $machine = Machine::factory()->create(['unguarded_until' => now()->addMinutes(5)]);
+    $this->actingAs(User::factory()->admin()->create());
+    $machine = unguardedMachine();
     app(ActionExecutor::class)->proposeCommand($machine, "echo 'it works'; id", null, 'test');
 
     $output = app(ActionExecutor::class)->approve(PendingAction::sole());
@@ -141,8 +177,8 @@ it('runs an approved command as root, quoted as one argument', function () {
 it('leaves a command pending and unrun when the session ended, or the approval is not from the dashboard', function () {
     $commands = [];
     leaseTransport($commands);
-    $this->actingAs(User::factory()->approver()->create());
-    $machine = Machine::factory()->create(['unguarded_until' => now()->addMinutes(5)]);
+    $this->actingAs(User::factory()->admin()->create());
+    $machine = unguardedMachine();
     $executor = app(ActionExecutor::class);
     $executor->proposeCommand($machine, 'reboot', null, 'test');
 
@@ -156,7 +192,7 @@ it('leaves a command pending and unrun when the session ended, or the approval i
 });
 
 it('never schedules a raw command for a maintenance window', function () {
-    $machine = Machine::factory()->create(['unguarded_until' => now()->addMinutes(5), 'maintenance_days' => [1], 'maintenance_start' => '03:00', 'maintenance_minutes' => 60]);
+    $machine = unguardedMachine(['maintenance_days' => [1], 'maintenance_start' => '03:00', 'maintenance_minutes' => 60]);
     app(ActionExecutor::class)->proposeCommand($machine, 'uptime', null, 'test');
 
     expect(fn () => app(ActionExecutor::class)->schedule(PendingAction::sole()))->toThrow(HttpException::class);
@@ -165,7 +201,7 @@ it('never schedules a raw command for a maintenance window', function () {
 it('starts and ends the session from the chat for admins only', function () {
     $commands = [];
     leaseTransport($commands);
-    $machine = Machine::factory()->create();
+    $machine = Machine::factory()->create(['host_key_fingerprint' => 'SHA256:'.str_repeat('A', 43)]);
 
     $this->actingAs(User::factory()->approver()->create());
     Livewire::test(MachineChat::class, ['machine' => $machine])->call('toggleUnguarded')->assertForbidden();
@@ -188,7 +224,7 @@ it('approves a proposed command from the chat and tells the agent the outcome on
     leaseTransport($commands);
     SysadminAgent::fake(['first', 'second']);
     $this->actingAs(User::factory()->admin()->create());
-    $machine = Machine::factory()->create(['unguarded_until' => now()->addMinutes(5)]);
+    $machine = unguardedMachine();
     app(ActionExecutor::class)->proposeCommand($machine, 'df -h', null, 'disk check');
     $id = PendingAction::sole()->id;
 
@@ -204,9 +240,109 @@ it('approves a proposed command from the chat and tells the agent the outcome on
 });
 
 it('ends the session when access to the machine is revoked', function () {
-    $machine = Machine::factory()->create(['unguarded_until' => now()->addMinutes(5)]);
+    $machine = unguardedMachine();
 
     app(AccessControl::class)->revoke($machine);
 
-    expect($machine->fresh()->unguardedActive())->toBeFalse()->and($machine->fresh()->unguarded_until)->toBeNull();
+    expect($machine->fresh())->unguardedActive()->toBeFalse()->unguarded_until->toBeNull()->unguarded_session->toBeNull();
+});
+
+it('issues a lease token that the wrapper accepts for this machine only', function () {
+    $host = localHostKey() ?? $this->markTestSkipped('no readable ed25519 host key');
+    $commands = [];
+    leaseTransport($commands);
+    $machine = Machine::factory()->create(['host_key_fingerprint' => $host]);
+
+    app(UnguardedSession::class)->open($machine);
+    preg_match("#on '([^']+)' '([^']+)'#", $commands[0], $m);
+    $result = checkLease(app(ClientBundle::class)->wrappers()['sentinel-unguarded'], $m[1], $m[2]);
+
+    expect($result->exitCode())->toBe(0)
+        ->and($result->output())->toContain('30-minute lease');
+});
+
+it('refuses lease tokens Sentinel did not issue, or not for now and here', function (Closure $lease, int $exit, string $error) {
+    $host = localHostKey() ?? $this->markTestSkipped('no readable ed25519 host key');
+    $wrapper = app(ClientBundle::class)->wrappers()['sentinel-unguarded'];
+    $nonce = str_repeat('ab', 16);
+    $valid = fn (array $overrides = []) => vsprintf('SENTINEL-LEASE 1 host=%s nonce=%s not_after=%d minutes=%d', [...['host' => $host, 'nonce' => $nonce, 'not_after' => time() + 60, 'minutes' => 30], ...$overrides]);
+
+    [$token, $signature] = $lease($valid);
+    $result = checkLease($wrapper, $token, $signature);
+
+    expect($result->exitCode())->toBe($exit)
+        ->and($result->errorOutput())->toContain($error);
+})->with([
+    'signed by another key' => [function (Closure $valid) {
+        config(['sentinel.actions.bundle_signing_key' => sys_get_temp_dir().'/other-signing-'.uniqid().'.key']);
+        app()->forgetInstance(BundleSigner::class);
+
+        return signedLease($valid());
+    }, 3, 'not signed by Sentinel'],
+    'a bundle signature' => [fn (Closure $valid) => signedLease($valid(), BundleSigner::NAMESPACE), 3, 'not signed by Sentinel'],
+    'changed after signing' => [fn (Closure $valid) => [base64_encode($valid(['minutes' => 31])), signedLease($valid())[1]], 3, 'not signed by Sentinel'],
+    'expired' => [fn (Closure $valid) => signedLease($valid(['not_after' => time() - 5])), 4, 'expired'],
+    'valid for hours' => [fn (Closure $valid) => signedLease($valid(['not_after' => time() + 3600])), 4, 'too long'],
+    'longer than the machine allows' => [fn (Closure $valid) => signedLease($valid(['minutes' => 31])), 4, 'at most 30 minutes'],
+    'for another machine' => [fn (Closure $valid) => signedLease($valid(['host' => 'SHA256:'.str_repeat('A', 43)])), 4, 'another machine'],
+    'not base64' => [fn () => ["x'; id #", 'c2ln'], 2, 'invalid token encoding'],
+]);
+
+it('refuses to open a session on a machine whose host key is not pinned', function () {
+    $commands = [];
+    leaseTransport($commands);
+    $machine = Machine::factory()->create(['host_key_fingerprint' => null]);
+
+    expect(fn () => app(UnguardedSession::class)->open($machine))->toThrow(RuntimeException::class, 'Pin the host key')
+        ->and($commands)->toBeEmpty()
+        ->and($machine->fresh()->unguardedActive())->toBeFalse();
+});
+
+it('only lets an administrator approve a command, and leaves it pending for an approver', function () {
+    $commands = [];
+    leaseTransport($commands);
+    $this->actingAs(User::factory()->approver()->create());
+    $machine = unguardedMachine();
+    app(ActionExecutor::class)->proposeCommand($machine, 'id', null, 'test');
+
+    expect(app(ActionExecutor::class)->approve(PendingAction::sole()))->toContain('only an administrator')
+        ->and(PendingAction::sole()->status)->toBe('pending')
+        ->and($commands)->toBeEmpty()
+        ->and(Activity::where('event', 'action_approval_denied')->count())->toBe(1);
+
+    Livewire::test(MachineChat::class, ['machine' => $machine])
+        ->assertSee('id')->assertDontSee('Approve and run as root')
+        ->call('approveCommand', PendingAction::sole()->id)->assertForbidden();
+});
+
+it('never runs a command proposed in an earlier session', function () {
+    $commands = [];
+    leaseTransport($commands);
+    $this->actingAs(User::factory()->admin()->create());
+    $machine = unguardedMachine();
+    app(ActionExecutor::class)->proposeCommand($machine, 'id', null, 'test');
+    $machine->forceFill(['unguarded_session' => (string) Str::uuid()])->save();
+
+    expect(app(ActionExecutor::class)->approve(PendingAction::sole()))->toContain('earlier unguarded session')
+        ->and(PendingAction::sole()->status)->toBe('pending')
+        ->and($commands)->toBeEmpty();
+});
+
+it('rejects the commands left waiting when a session ends, and those of an expired one when the next starts', function () {
+    $commands = [];
+    leaseTransport($commands);
+    $machine = unguardedMachine(['host_key_fingerprint' => 'SHA256:'.str_repeat('A', 43)]);
+    app(ActionExecutor::class)->proposeCommand($machine, 'id', null, 'test');
+
+    app(UnguardedSession::class)->close($machine);
+
+    expect(PendingAction::sole()->status)->toBe('rejected');
+
+    $machine = unguardedMachine(['host_key_fingerprint' => 'SHA256:'.str_repeat('B', 43)]);
+    app(ActionExecutor::class)->proposeCommand($machine, 'uptime', null, 'test');
+    $machine->forceFill(['unguarded_until' => now()->subMinute()])->save();
+
+    app(UnguardedSession::class)->open($machine);
+
+    expect(PendingAction::where('machine_id', $machine->id)->sole()->status)->toBe('rejected');
 });

@@ -126,6 +126,7 @@ class ClientBundle
             '__RECOVERABLE__' => collect(config('sentinel.actions.recoverable_services'))->map(fn ($p) => "'{$p}'")->implode(' '),
             '__LOG_CASES__' => $logCases,
             '__UNGUARDED_TTL__' => (string) max(1, (int) config('sentinel.unguarded.lease_minutes')),
+            '__SIGNING_KEY__' => $this->signer->publicKey(),
             '__IGNOREIP__' => implode(' ', SourceIps::configured()),
         ]);
     }
