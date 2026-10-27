@@ -14,7 +14,7 @@ class AccessControl
     public function revoke(Machine $machine, bool $purge = false): int
     {
         // "Approve always" grants go too: lifting the revocation later must not bring back unattended actions.
-        $machine->forceFill(['revoked_at' => $machine->revoked_at ?? now(), 'autonomy_enabled' => false, 'trusted_actions' => null])->save();
+        $machine->forceFill(['revoked_at' => $machine->revoked_at ?? now(), 'autonomy_enabled' => false, 'trusted_actions' => null, 'unguarded_until' => null])->save();
 
         $cancelled = PendingAction::where('machine_id', $machine->id)->whereIn('status', ['pending', 'scheduled'])
             ->update(['status' => 'rejected', 'decided_at' => now()]);

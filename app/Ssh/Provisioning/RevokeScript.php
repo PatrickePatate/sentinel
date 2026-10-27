@@ -41,7 +41,8 @@ if [[ -n "\$home" && -d "\$home/.ssh" ]]; then
 fi
 
 # 2. Privileges: sudo policy and root wrappers
-rm -f /etc/sudoers.d/sentinel /etc/sudoers.d/.sentinel-*
+systemctl stop sentinel-unguarded-expire.timer sentinel-unguarded-expire.service 2>/dev/null || true
+rm -f /etc/sudoers.d/sentinel /etc/sudoers.d/sentinel-unguarded /etc/sudoers.d/.sentinel-*
 rm -f /usr/local/sbin/sentinel-*
 
 # 3. Live sessions and processes of the user

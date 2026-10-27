@@ -141,6 +141,50 @@ class ActionExecutor
     }
 
     /**
+     * Files a shell command for approval during an unguarded session. Like propose(), it never runs anything: the
+     * human approves this exact command in the chat, and approve() runs it only while the session is still open.
+     *
+     * @return string Message for the agent.
+     */
+    public function proposeCommand(Machine $machine, string $command, ?AgentRun $run, string $rationale): string
+    {
+        if (! $machine->unguardedActive()) {
+            return 'REFUSED: no unguarded session is open on this machine. Use the guarded tools, or describe the command in your report.';
+        }
+
+        $action = $this->catalog->get('run_command');
+
+        try {
+            $built = $action->command(['command' => $command]);
+        } catch (InvalidToolArguments $e) {
+            $this->audit->record($machine, $run, 'rejected', 'run_command', ['arguments' => ['command' => $command], 'reason' => $e->getMessage()]);
+
+            return 'ERROR: '.$e->getMessage();
+        }
+
+        $existing = PendingAction::where('machine_id', $machine->id)->where('status', 'pending')->where('command', $built)->first();
+
+        if ($existing) {
+            return "ALREADY_PENDING (#{$existing->id}): this exact command is already waiting for approval.";
+        }
+
+        $pending = PendingAction::create([
+            'machine_id' => $machine->id,
+            'agent_run_id' => $run?->id,
+            'action' => 'run_command',
+            'arguments' => ['command' => $command],
+            'command' => $built,
+            'risk' => $action->risk()->value,
+            'reason' => 'Proposed by the agent in an unguarded session (its own words, not verified: it may repeat text planted in the logs it read): '
+                .(mb_substr(trim($rationale), 0, 500) ?: 'no rationale given'),
+        ]);
+        $this->audit->record($machine, $run, 'command_proposed', 'run_command', ['arguments' => ['command' => $command], 'command' => $built, 'pending_action_id' => $pending->id]);
+        Realtime::push('actions');
+
+        return "PROPOSED (#{$pending->id}): waiting for the administrator to approve it in the chat. Not executed; its result comes with their next message.";
+    }
+
+    /**
      * Executes an action a human explicitly approved. The command is re-derived from the
      * catalog (never taken from the stored row) and must be identical to the one the human
      * reviewed; the pending -> running transition is atomic so it can only run once.
@@ -148,6 +192,10 @@ class ActionExecutor
     /** @param array<string, mixed> $context Extra audit properties (e.g. who approved, through which channel). */
     public function approve(PendingAction $pending, array $context = [], string $from = 'pending'): string
     {
+        if ($pending->action === 'run_command' && ($refusal = $this->rawCommandRefusal($pending, $context)) !== null) {
+            return $refusal;
+        }
+
         // A scheduled action already collected its approvals when it was scheduled.
         if ($from === 'pending' && ($waiting = $this->awaitSecondApproval($pending, $context)) !== null) {
             return $waiting;
@@ -190,6 +238,7 @@ class ActionExecutor
     {
         $window = $pending->machine->maintenanceWindow();
         abort_unless($window !== null, 422, 'This machine has no maintenance window.');
+        abort_if($pending->action === 'run_command', 422, 'An unguarded command runs now or not at all: its session is short-lived.');
 
         if (($waiting = $this->awaitSecondApproval($pending, $context)) !== null) {
             return $waiting;
@@ -296,11 +345,34 @@ class ActionExecutor
         $pending->refresh();
     }
 
+    /**
+     * A raw command is approved by a person looking at it, in the dashboard, while the session that proposed it is
+     * still open. Anything else (Telegram, the command line, a closed session) leaves it pending, never runs it.
+     *
+     * @param  array<string, mixed>  $context
+     */
+    private function rawCommandRefusal(PendingAction $pending, array $context): ?string
+    {
+        if (isset($context['via']) || ! auth()->check()) {
+            $this->audit->record($pending->machine, $pending->agentRun, 'action_approval_denied', $pending->action, ['pending_action_id' => $pending->id, 'reason' => 'raw commands are approved in the dashboard only'] + $context);
+
+            return 'ERROR: commands of an unguarded session are approved in the dashboard chat only.';
+        }
+
+        if (! $pending->machine->unguardedActive()) {
+            return 'ERROR: the unguarded session is not open (it ended or expired). Start a new one in the chat, and have the agent propose the command again.';
+        }
+
+        return null;
+    }
+
     /** @param array<string, mixed> $context */
     private function run(Machine $machine, ?AgentRun $run, string $action, string $command, array $context, string $event): string
     {
+        $timeout = $action === 'run_command' ? (int) config('sentinel.unguarded.command_timeout') : SafeExecutor::TIMEOUT_SECONDS;
+
         try {
-            $result = $this->transport->run($machine, $command, SafeExecutor::TIMEOUT_SECONDS);
+            $result = $this->transport->run($machine, $command, $timeout);
         } catch (Throwable $e) {
             $this->audit->record($machine, $run, 'action_failed', $action, $context + ['command' => $command, 'error' => $e->getMessage()]);
 

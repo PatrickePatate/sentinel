@@ -104,6 +104,14 @@ class FakeTransport implements SshTransport
             return [$ok('installed bundle '.$m[1].' ('.count(ClientBundle::WRAPPERS)." wrappers)\n"), $s];
         }
 
+        if (preg_match('#^/usr/local/sbin/sentinel-unguarded (on|off) 2>&1$#', $command, $m)) {
+            return [$ok($m[1] === 'on' ? 'unguarded session open for '.config('sentinel.unguarded.lease_minutes')." minutes\n" : "unguarded session closed\n"), $s];
+        }
+
+        if (str_starts_with($command, 'bash -c ')) {
+            return [$ok("(simulated machine) would run: {$command}\n"), $s];
+        }
+
         if (preg_match("/^systemctl reload -- '([^']+)' 2>&1$/", $command, $m)) {
             $svc = $s['services'][$m[1]] ?? null;
 

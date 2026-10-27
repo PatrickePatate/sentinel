@@ -50,6 +50,9 @@ function validActionArguments(): array
         'reload_web_config' => ['service' => 'nginx'],
         'rollback_web_config' => ['service' => 'nginx'],
         'remove_old_kernels' => [],
+        'unguarded_open' => [],
+        'unguarded_close' => [],
+        'run_command' => ['command' => 'journalctl -u nginx --since today | tail -n 50'],
     ];
 }
 

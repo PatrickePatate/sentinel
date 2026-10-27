@@ -26,6 +26,7 @@ class ClientBundle
         'sentinel-web-config',
         'sentinel-account-audit',
         'sentinel-kernel-cleanup',
+        'sentinel-unguarded',
     ];
 
     public function __construct(private SudoersBuilder $sudoers, private BundleSigner $signer) {}
@@ -124,6 +125,7 @@ class ClientBundle
             '__INSTALLABLE__' => collect(config('sentinel.actions.installable_packages'))->map(fn ($p) => "'{$p}'")->implode(' '),
             '__RECOVERABLE__' => collect(config('sentinel.actions.recoverable_services'))->map(fn ($p) => "'{$p}'")->implode(' '),
             '__LOG_CASES__' => $logCases,
+            '__UNGUARDED_TTL__' => (string) max(1, (int) config('sentinel.unguarded.lease_minutes')),
             '__IGNOREIP__' => implode(' ', SourceIps::configured()),
         ]);
     }

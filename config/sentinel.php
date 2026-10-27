@@ -169,6 +169,13 @@ TXT,
         'verify_delay_seconds' => (int) env('SENTINEL_VERIFY_DELAY', 3),
     ],
 
+    'unguarded' => [
+        // An unguarded chat session holds a root lease on the machine for this long; it ends by itself on the machine too.
+        'lease_minutes' => (int) env('SENTINEL_UNGUARDED_LEASE_MINUTES', 30),
+        // Seconds an approved command may run (the guarded actions get 20).
+        'command_timeout' => (int) env('SENTINEL_UNGUARDED_COMMAND_TIMEOUT', 120),
+    ],
+
     'fail2ban' => [
         // Log files the agent may test regexes against / attach jails to (key => absolute path).
         'logs' => [

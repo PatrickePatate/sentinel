@@ -17,6 +17,7 @@ use RuntimeException;
  * @property list<int|string>|null $maintenance_days
  * @property Carbon|null $maintenance_until
  * @property Carbon|null $revoked_at
+ * @property Carbon|null $unguarded_until
  * @property Carbon|null $last_scan_at
  * @property Carbon|null $last_webserver_scan_at
  * @property Carbon|null $provision_token_expires_at
@@ -40,6 +41,7 @@ class Machine extends Model
             'private_key' => 'encrypted',
             'passphrase' => 'encrypted',
             'revoked_at' => 'datetime',
+            'unguarded_until' => 'datetime',
             'last_scan_at' => 'datetime',
             'last_webserver_scan_at' => 'datetime',
             'provision_token' => 'encrypted',
@@ -104,6 +106,12 @@ class Machine extends Model
     public function isRevoked(): bool
     {
         return $this->revoked_at !== null;
+    }
+
+    /** An unguarded chat session is open: the root lease on the machine has not run out. */
+    public function unguardedActive(): bool
+    {
+        return ! $this->isRevoked() && $this->unguarded_until?->isFuture() === true;
     }
 
     /** Kill switch: every SSH transport calls this before opening a connection. */

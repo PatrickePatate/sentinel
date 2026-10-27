@@ -83,13 +83,14 @@ class ScanRunner
      * @param  list<array{role: string, content: string}>  $history
      * @param  (Closure(StreamEvent): void)|null  $onStream  Receives streaming events (text deltas, tool calls...).
      */
-    public function reply(Machine $machine, string $message, array $history, ?Closure $onStream = null): AgentRun
+    public function reply(Machine $machine, string $message, array $history, ?Closure $onStream = null, bool $unguarded = false, string $context = ''): AgentRun
     {
-        return $this->execute($machine, $message, $message, $history, onStream: $onStream);
+        // $context is appended to what the model is asked, not to the objective the run records.
+        return $this->execute($machine, $message, $message.$context, $history, onStream: $onStream, unguarded: $unguarded && $machine->unguardedActive());
     }
 
     /** @param list<array{role: string, content: string}> $history */
-    private function execute(Machine $machine, string $objective, string $prompt, array $history, ?string $provider = null, ?string $model = null, ?Closure $onStream = null, string $trigger = 'chat', bool $scan = false, ?AgentRun $run = null, bool $live = false, ?string $profile = null): AgentRun
+    private function execute(Machine $machine, string $objective, string $prompt, array $history, ?string $provider = null, ?string $model = null, ?Closure $onStream = null, string $trigger = 'chat', bool $scan = false, ?AgentRun $run = null, bool $live = false, ?string $profile = null, bool $unguarded = false): AgentRun
     {
         if ($trigger === 'scheduled') {
             // A scheduled-only model is only used together with its own provider: a model name means nothing on another one.
@@ -117,7 +118,7 @@ class ScanRunner
         }
 
         try {
-            $agent = new SysadminAgent($machine, $run, $objective, $history, requiresVerdict: $scan);
+            $agent = new SysadminAgent($machine, $run, $objective, $history, requiresVerdict: $scan, unguarded: $unguarded);
 
             if ($onStream || $scan || $live) {
                 $stream = $agent->stream($prompt, provider: $provider, model: $model);

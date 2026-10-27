@@ -10,6 +10,7 @@ use App\Ssh\Actions\Fail2banWriteFilterAction;
 use App\Ssh\Actions\FixedCommandAction;
 use App\Ssh\Actions\HardenSshAction;
 use App\Ssh\Actions\InstallSecurityPackageAction;
+use App\Ssh\Actions\RawCommandAction;
 use App\Ssh\Actions\ReloadServiceAction;
 use App\Ssh\Actions\ReloadWebConfigAction;
 use App\Ssh\Actions\RemoveOldKernelsAction;
@@ -18,6 +19,7 @@ use App\Ssh\Actions\RestartServiceAction;
 use App\Ssh\Actions\RiskLevel;
 use App\Ssh\Actions\RollbackWebConfigAction;
 use App\Ssh\Actions\StartDownServiceAction;
+use App\Ssh\Actions\UnguardedLeaseAction;
 use App\Ssh\Actions\UpdatePackageAction;
 use InvalidArgumentException;
 
@@ -59,6 +61,10 @@ class ActionCatalog
             new ReloadWebConfigAction,
             new RollbackWebConfigAction,
             new RemoveOldKernelsAction,
+            // Human-only: never offered to the agent as tools (see HumanOnly).
+            new UnguardedLeaseAction(open: true),
+            new UnguardedLeaseAction(open: false),
+            new RawCommandAction,
         ]);
     }
 
