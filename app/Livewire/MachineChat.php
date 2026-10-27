@@ -182,9 +182,9 @@ class MachineChat extends Component
 
         try {
             $output = $executor->approve($pending, ['surface' => 'chat']);
-            $pending->refresh();
 
-            if ($pending->status === 'pending') {
+            // approve() leaves it pending when it refuses: read the status it left, not the one checked above.
+            if ($pending->refresh()->status === 'pending') {
                 $this->dispatch('toast', message: 'Not run', description: $output, type: 'warning');
             }
         } catch (Throwable $e) {

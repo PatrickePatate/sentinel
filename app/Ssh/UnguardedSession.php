@@ -4,9 +4,11 @@ namespace App\Ssh;
 
 use App\Models\Machine;
 use App\Models\PendingAction;
+use App\Ssh\Actions\UnguardedLeaseAction;
 use App\Ssh\Provisioning\BundleSigner;
 use App\Support\Realtime;
 use Illuminate\Support\Str;
+use LogicException;
 use RuntimeException;
 use Throwable;
 
@@ -84,8 +86,13 @@ class UnguardedSession
         $line = 'SENTINEL-RUN 1 host='.$this->host($machine).' session='.self::wire($machine->unguarded_session)
             .' nonce='.bin2hex(random_bytes(16)).' not_after='.$this->notAfter().' command='.base64_encode($command);
         $token = $this->signed($line);
+        $lease = $this->catalog->get('unguarded_open');
 
-        return $this->catalog->get('unguarded_open')->signedCommand('run', $token['token'], $token['signature']);
+        if (! $lease instanceof UnguardedLeaseAction) {
+            throw new LogicException('unguarded_open must be the lease action.');
+        }
+
+        return $lease->signedCommand('run', $token['token'], $token['signature']);
     }
 
     /** @return array{token: string, signature: string} The token line and its signature, both base64 for the command line. */
