@@ -25,7 +25,14 @@
                     <p class="mt-2 text-sm"><x-ui.badge variant="info">{{ count($action->approvals ?? []) }} of 2 approvals</x-ui.badge> @foreach ($action->approvals ?? [] as $approval)<span class="text-xs text-muted-foreground">approved by {{ $approval['name'] }} {{ \Illuminate\Support\Carbon::parse($approval['at'])->diffForHumans() }}</span>@endforeach</p>
                 @endif
                 @if ($action->output)<pre class="mt-3 max-h-48 overflow-auto rounded-md border bg-muted/50 p-3 text-xs">{{ $action->output }}</pre>@endif
-                @if ($action->status === 'pending' && auth()->user()->can('approve'))
+                @if ($action->status === 'pending' && $action->action === 'run_command' && auth()->user()->can('approve'))
+                    <x-slot:footer>
+                        {{-- A raw root command is approved in the machine's chat only, next to the conversation that led to it. --}}
+                        <span class="text-sm text-muted-foreground">Runs as root: an administrator approves it in the chat of this machine.</span>
+                        <x-ui.button size="sm" variant="outline" :href="route('machines.show', $action->machine)">@svg('lucide-message-square') Open the chat</x-ui.button>
+                        <x-ui.button size="sm" variant="outline" wire:click="reject({{ $action->id }})">@svg('lucide-x') Reject</x-ui.button>
+                    </x-slot:footer>
+                @elseif ($action->status === 'pending' && auth()->user()->can('approve'))
                     <x-slot:footer>
                         <x-ui.button size="sm" :x-on:click="'$store.confirm.ask({ title: \'Run this exact command now?\', message: '.\Illuminate\Support\Js::from($action->machine->name.': '.$action->command).', label: \'Approve and run\', action: () => $wire.approve('.$action->id.') })'">@svg('lucide-check') Approve and run</x-ui.button>
                         @if (in_array($action->action, $trustable, true) && ! $action->machine->trusts($action->action) && auth()->user()->can('admin'))

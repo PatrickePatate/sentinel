@@ -6,7 +6,10 @@ use App\Ssh\Provisioning\RequiresSudo;
 use App\Ssh\Tools\InvalidToolArguments;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 
-/** Opens or closes the time-boxed root lease behind an unguarded chat session (see UnguardedSession). */
+/**
+ * Opens or closes the time-boxed lease behind an unguarded chat session (see UnguardedSession). The same wrapper runs
+ * the approved commands, each with its own signed token: see signedCommand().
+ */
 class UnguardedLeaseAction implements ActionTool, HumanOnly, RequiresSudo
 {
     use UsesSudo;
@@ -37,13 +40,32 @@ class UnguardedLeaseAction implements ActionTool, HumanOnly, RequiresSudo
         return [];
     }
 
+    /** Opening takes the signed lease token (see UnguardedSession::open), both base64; closing takes nothing. */
     public function command(array $arguments): string
     {
-        if ($arguments !== []) {
-            throw new InvalidToolArguments("{$this->name()} takes no arguments.");
+        if (! $this->open) {
+            if ($arguments !== []) {
+                throw new InvalidToolArguments('unguarded_close takes no arguments.');
+            }
+
+            return $this->sudo().self::WRAPPER.' off 2>&1';
         }
 
-        return $this->sudo().self::WRAPPER.($this->open ? ' on' : ' off').' 2>&1';
+        $token = $arguments['token'] ?? null;
+        $signature = $arguments['signature'] ?? null;
+
+        if (array_keys($arguments) !== ['token', 'signature'] || ! is_string($token) || ! is_string($signature)
+            || ! preg_match('#^[A-Za-z0-9+/=]{1,1024}$#', $token) || ! preg_match('#^[A-Za-z0-9+/=]{1,4096}$#', $signature)) {
+            throw new InvalidToolArguments('unguarded_open takes a base64 token and signature.');
+        }
+
+        return $this->signedCommand('on', $token, $signature);
+    }
+
+    /** The wrapper call for a signed token: 'on' opens the lease, 'run' runs the one command its token carries. */
+    public function signedCommand(string $verb, string $token, string $signature): string
+    {
+        return $this->sudo().self::WRAPPER.' '.$verb.' '.escapeshellarg($token).' '.escapeshellarg($signature).' 2>&1';
     }
 
     public function sudoRules(): array

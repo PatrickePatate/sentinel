@@ -3,14 +3,17 @@
 namespace App\Livewire;
 
 use App\Ai\ScanRunner;
+use App\Auth\Totp;
 use App\Livewire\Concerns\AuthorizesAccess;
 use App\Models\ChatMessage;
 use App\Models\Machine;
 use App\Models\PendingAction;
 use App\Ssh\ActionExecutor;
+use App\Ssh\AuditTrail;
 use App\Ssh\UnguardedSession;
 use App\Support\SafeMarkdown;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Laravel\Ai\Streaming\Events\StreamEvent;
 use Laravel\Ai\Streaming\Events\TextDelta;
@@ -87,17 +90,29 @@ class MachineChat extends Component
         $this->store('assistant', $run->status === 'completed' ? $run->report : 'The agent could not answer: '.$run->report);
     }
 
-    /** Starts (after the confirmation in the page) or ends the unguarded session of this machine: a root lease, commands still approved one by one. */
-    public function toggleUnguarded(UnguardedSession $session): void
+    /**
+     * Starts the unguarded session of this machine, after the confirmation in the page: a root lease, commands still
+     * approved one by one. Opening one is the most powerful thing Sentinel does, so the admin proves it is them again
+     * (their authentication code, or their password without two-factor), whatever the age of their login.
+     *
+     * @return bool Whether it started, for the modal to close.
+     */
+    public function openUnguarded(string $proof, UnguardedSession $session, Totp $totp): bool
     {
         $this->allow('admin');
         $machine = Machine::findOrFail($this->machineId);
 
+        // A stale page cannot turn "start" into "end" (or the reverse): each button only does what it says.
         if ($machine->unguardedActive()) {
-            $closed = $session->close($machine);
-            $this->dispatch('toast', message: 'Unguarded session ended', description: $closed ? null : 'The machine could not be reached: the lease ends by itself on the machine.', type: $closed ? 'success' : 'warning');
+            $this->dispatch('toast', message: 'An unguarded session is already open on this machine', type: 'info');
 
-            return;
+            return true;
+        }
+
+        if (($refusal = $this->stepUpRefusal($proof, $totp)) !== null) {
+            $this->dispatch('toast', message: 'Could not start the unguarded session', description: $refusal, type: 'error');
+
+            return false;
         }
 
         try {
@@ -105,15 +120,58 @@ class MachineChat extends Component
         } catch (RuntimeException $e) {
             $this->dispatch('toast', message: 'Could not start the unguarded session', description: $e->getMessage(), type: 'error');
 
-            return;
+            return false;
         }
 
         $this->dispatch('toast', message: 'Unguarded session started', description: 'Root lease until '.$machine->fresh()->unguarded_until->format('H:i').'. Every command still needs your approval.', type: 'warning');
+
+        return true;
     }
 
+    public function closeUnguarded(UnguardedSession $session): void
+    {
+        $this->allow('admin');
+        $machine = Machine::findOrFail($this->machineId);
+
+        if (! $machine->unguardedActive()) {
+            return;
+        }
+
+        $closed = $session->close($machine);
+        $this->dispatch('toast', message: 'Unguarded session ended', description: $closed ? null : 'The machine could not be reached: the lease ends by itself on the machine.', type: $closed ? 'success' : 'warning');
+    }
+
+    /** Null when $proof is the current user's authentication code (or password, without two-factor); otherwise why not. */
+    private function stepUpRefusal(string $proof, Totp $totp): ?string
+    {
+        $user = auth()->user();
+        $key = "unguarded-step-up|{$user->id}";
+
+        if (RateLimiter::tooManyAttempts($key, 5)) {
+            return 'Too many attempts. Try again in '.RateLimiter::availableIn($key).' seconds.';
+        }
+
+        // The code shares its replay key with the login challenge: a code already used to sign in does not count again.
+        $valid = $user->hasTwoFactor()
+            ? $totp->verify($user->two_factor_secret, $proof, "user:{$user->id}")
+            : $proof !== '' && Hash::check($proof, $user->password);
+
+        if (! $valid) {
+            RateLimiter::hit($key, 60);
+            app(AuditTrail::class)->record(Machine::findOrFail($this->machineId), null, 'unguarded_step_up_failed', 'unguarded session');
+
+            return $user->hasTwoFactor() ? 'This authentication code is not valid.' : 'This password is not valid.';
+        }
+
+        RateLimiter::clear($key);
+
+        return null;
+    }
+
+    /** Running a raw command is running anything as root: an administrator approves it, like opening the session. */
     public function approveCommand(int $id, ActionExecutor $executor): void
     {
-        $this->allow('approve');
+        $this->allow('admin');
         $pending = $this->commands()->firstWhere('id', $id);
 
         if (! $pending || $pending->status !== 'pending') {
@@ -123,10 +181,10 @@ class MachineChat extends Component
         }
 
         try {
-            $output = $executor->approve($pending);
-            $pending->refresh();
+            $output = $executor->approve($pending, ['surface' => 'chat']);
 
-            if ($pending->status === 'pending') {
+            // approve() leaves it pending when it refuses: read the status it left, not the one checked above.
+            if ($pending->refresh()->status === 'pending') {
                 $this->dispatch('toast', message: 'Not run', description: $output, type: 'warning');
             }
         } catch (Throwable $e) {

@@ -10,10 +10,11 @@ use Illuminate\Support\Carbon;
  * @property array<string, mixed>|null $arguments
  * @property Carbon|null $decided_at
  * @property Carbon|null $run_after
+ * @property string|null $unguarded_session
  */ class PendingAction extends Model
 {
     /** @var list<string> */
-    protected $fillable = ['machine_id', 'agent_run_id', 'action', 'arguments', 'command', 'risk', 'reason', 'status', 'output', 'decided_at', 'run_after', 'approvals'];
+    protected $fillable = ['machine_id', 'agent_run_id', 'action', 'arguments', 'command', 'risk', 'reason', 'status', 'output', 'decided_at', 'run_after', 'approvals', 'unguarded_session'];
 
     protected function casts(): array
     {

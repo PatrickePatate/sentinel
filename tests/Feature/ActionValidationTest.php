@@ -50,7 +50,7 @@ function validActionArguments(): array
         'reload_web_config' => ['service' => 'nginx'],
         'rollback_web_config' => ['service' => 'nginx'],
         'remove_old_kernels' => [],
-        'unguarded_open' => [],
+        'unguarded_open' => ['token' => 'dG9rZW4=', 'signature' => 'c2lnbmF0dXJl'],
         'unguarded_close' => [],
         'run_command' => ['command' => 'journalctl -u nginx --since today | tail -n 50'],
     ];
@@ -69,7 +69,8 @@ it('builds a sudo command from valid arguments', function (string $name) {
     if ($action instanceof RequiresSudo) {
         expect($action->sudoRules())->not->toBeEmpty()->each->toStartWith('/');
     }
-})->with(fn () => array_keys(validActionArguments()));
+    // run_command's command is the reviewed text; it reaches the machine through a signed run of the lease wrapper (see UnguardedSessionTest).
+})->with(fn () => array_values(array_diff(array_keys(validActionArguments()), ['run_command'])));
 
 it('drops sudo when it is disabled', function (string $name) {
     config(['sentinel.actions.use_sudo' => false]);

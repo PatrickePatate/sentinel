@@ -18,6 +18,7 @@ use RuntimeException;
  * @property Carbon|null $maintenance_until
  * @property Carbon|null $revoked_at
  * @property Carbon|null $unguarded_until
+ * @property string|null $unguarded_session
  * @property Carbon|null $last_scan_at
  * @property Carbon|null $last_webserver_scan_at
  * @property Carbon|null $provision_token_expires_at
