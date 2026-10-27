@@ -102,6 +102,11 @@ it('generates a sudoers file that visudo accepts', function () {
         $this->markTestSkipped('visudo not installed');
     }
 
+    // The Rust rewrite does not know the `requiretty` and `logfile` settings that sudo itself accepts.
+    if (str_contains(Process::run('visudo --version')->output(), 'visudo-rs')) {
+        $this->markTestSkipped('visudo-rs does not implement every sudoers setting');
+    }
+
     $file = tempnam(sys_get_temp_dir(), 'sudoers');
     file_put_contents($file, builder()->render('sentinel'));
     $check = Process::run(['visudo', '-cf', $file]);

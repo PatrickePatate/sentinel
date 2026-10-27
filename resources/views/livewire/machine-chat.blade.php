@@ -1,3 +1,4 @@
+<div>
 <x-ui.card class="h-[calc(100vh-14rem)] min-h-[28rem]" flush>
     <div class="flex h-full flex-col">
         <div class="flex items-center justify-between border-b px-5 py-3">
@@ -7,22 +8,18 @@
                     @if ($machine->unguardedActive())
                         <x-ui.button variant="outline" size="sm" wire:click="toggleUnguarded" wire:loading.attr="disabled" wire:target="toggleUnguarded">@svg('lucide-lock') End unguarded session</x-ui.button>
                     @elseif (! $machine->isRevoked())
-                        <x-ui.button variant="outline" size="sm" wire:loading.attr="disabled" wire:target="toggleUnguarded" x-on:click="$store.confirm.ask({
-                            title: 'Start an unguarded session on {{ e($machine->name) }}?',
-                            message: 'For {{ (int) config('sentinel.unguarded.lease_minutes') }} minutes the agent can propose ANY shell command, run as root on this {{ e($machine->environment) }} machine. Nothing runs until you approve that exact command in the chat, but an approved command is not risk-checked: it can delete data or stop services, and the agent reads text from the machine that an attacker may have planted. The session is audited and ends by itself on the machine.',
-                            label: 'Start unguarded session',
-                            destructive: true,
-                            action: () => $wire.toggleUnguarded()
-                        })">@svg('lucide-lock-open') Unguarded session</x-ui.button>
+                        <x-ui.button variant="outline" size="sm" wire:loading.attr="disabled" wire:target="toggleUnguarded" x-on:click="$dispatch('open-modal', 'unguarded')">@svg('lucide-lock-open') Unguarded session</x-ui.button>
                     @endif
                 @endcan
                 @if ($messages->isNotEmpty())<x-ui.button variant="ghost" size="sm" x-on:click="$store.confirm.ask({ title: 'Clear this conversation?', label: 'Clear', action: () => $wire.clear() })">@svg('lucide-trash-2') Clear</x-ui.button>@endif
             </div>
         </div>
         @if ($machine->unguardedActive())
-            <div class="flex items-center gap-2 border-b border-destructive/30 bg-destructive/10 px-5 py-2 text-xs text-destructive" wire:poll.30s>
+            <div class="flex items-center gap-2 border-b border-destructive/30 bg-destructive/10 px-5 py-2 text-xs text-destructive"
+                 x-data="{ end: {{ $machine->unguarded_until->getTimestampMs() }}, left: '', timer: null, init() { this.tick(); this.timer = setInterval(() => this.tick(), 1000); }, destroy() { clearInterval(this.timer); }, tick() { const s = Math.max(0, Math.round((this.end - Date.now()) / 1000)); this.left = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); if (s === 0) { clearInterval(this.timer); $wire.$refresh(); } } }">
                 @svg('lucide-triangle-alert', 'size-4 shrink-0')
-                <span><strong>Unguarded session</strong> until {{ $machine->unguarded_until->format('H:i') }}: the agent can propose any command as root. Read each one before approving.</span>
+                <span class="flex-1"><strong>Unguarded session</strong>: the agent can propose any command, run as root once you approve it. Read each one before approving.</span>
+                <span class="shrink-0 rounded-md bg-destructive/15 px-2 py-0.5 font-mono font-medium tabular-nums" x-text="left + ' left'"></span>
             </div>
         @endif
 
@@ -53,22 +50,28 @@
                 </div>
             @endforelse
 
+            @if ($commands->isNotEmpty())
+                <div class="flex items-center gap-3 text-xs text-muted-foreground"><span class="h-px flex-1 bg-border"></span><span class="flex items-center gap-1.5">@svg('lucide-terminal', 'size-3.5') Proposed commands</span><span class="h-px flex-1 bg-border"></span></div>
+            @endif
             @foreach ($commands->reverse() as $command)
-                <div wire:key="c{{ $command->id }}" class="ml-11 max-w-[85%] space-y-2 rounded-xl border border-destructive/30 bg-card px-4 py-3 text-sm shadow-xs">
+                @php $open = $command->status === 'pending' && $machine->unguardedActive(); @endphp
+                <div wire:key="c{{ $command->id }}" @class(['space-y-2 rounded-xl border bg-card px-4 py-3 text-sm shadow-xs', 'border-warning/50' => $open, 'border-destructive/30' => ! $open && $command->status === 'failed'])>
                     <div class="flex items-center justify-between gap-2">
-                        <span class="flex items-center gap-1.5 font-medium">@svg('lucide-terminal', 'size-4') Command #{{ $command->id }} <span class="font-normal text-muted-foreground">(root)</span></span>
-                        <x-ui.badge :variant="match ($command->status) { 'executed' => 'success', 'pending' => 'warning', default => 'secondary' }">{{ $command->status }}</x-ui.badge>
+                        <span class="flex items-center gap-1.5 font-medium">@svg('lucide-terminal', 'size-4') Command #{{ $command->id }} <span class="font-normal text-muted-foreground">as root</span></span>
+                        <x-ui.badge :variant="match ($command->status) { 'executed' => 'success', 'pending' => $open ? 'warning' : 'secondary', 'failed' => 'destructive', default => 'secondary' }">{{ $command->status === 'pending' && ! $open ? 'session ended' : ($command->status === 'pending' ? 'waiting for you' : $command->status) }}</x-ui.badge>
                     </div>
                     <pre class="overflow-x-auto whitespace-pre-wrap break-all rounded-md bg-muted px-3 py-2 font-mono text-xs">{{ $command->arguments['command'] ?? '' }}</pre>
-                    <p class="text-xs text-muted-foreground">{{ $command->reason }}</p>
+                    <p class="line-clamp-3 text-xs text-muted-foreground" title="{{ $command->reason }}">{{ $command->reason }}</p>
                     @if ($command->output)<pre class="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-md border px-3 py-2 font-mono text-xs">{{ $command->output }}</pre>@endif
-                    @if ($command->status === 'pending')
+                    @if ($open)
                         @can('approve')
                             <div class="flex gap-2">
-                                <x-ui.button size="sm" variant="destructive" wire:click="approveCommand({{ $command->id }})" wire:loading.attr="disabled" wire:target="approveCommand({{ $command->id }})">Approve and run as root</x-ui.button>
+                                <x-ui.button size="sm" variant="destructive" wire:click="approveCommand({{ $command->id }})" wire:loading.attr="disabled" wire:target="approveCommand({{ $command->id }})">@svg('lucide-play') Approve and run as root</x-ui.button>
                                 <x-ui.button size="sm" variant="outline" wire:click="rejectCommand({{ $command->id }})" wire:loading.attr="disabled">Reject</x-ui.button>
                             </div>
                         @endcan
+                    @elseif ($command->status === 'pending')
+                        <p class="text-xs text-muted-foreground">The session ended, so this cannot run. Start a new session and ask the agent to propose it again.</p>
                     @endif
                 </div>
             @endforeach
@@ -87,14 +90,37 @@
         <div class="border-t p-4">
             @can('approve')
             <form wire:submit="send" class="flex gap-2">
-                <x-ui.input wire:model="message" wire:loading.attr="disabled" wire:target="send" placeholder="Message the agent…" maxlength="2000" autocomplete="off" />
+                <x-ui.input wire:model="message" wire:loading.attr="disabled" wire:target="send" placeholder="{{ $machine->unguardedActive() ? 'Message the agent (unguarded session)…' : 'Message the agent…' }}" maxlength="2000" autocomplete="off" />
                 <x-ui.button type="submit" size="icon" wire:loading.attr="disabled" wire:target="send" aria-label="Send">@svg('lucide-send-horizontal')</x-ui.button>
             </form>
             @error('message')<p class="mt-2 text-xs text-destructive">{{ $message }}</p>@enderror
             @else
             <p class="text-center text-sm text-muted-foreground">Your role can read this conversation, not write to it.</p>
             @endcan
-            <p class="mt-2 text-center text-[11px] text-muted-foreground">The agent can make mistakes. Every command is audited.</p>
+            <p class="mt-2 text-center text-[11px] text-muted-foreground">{{ $machine->unguardedActive() ? 'Approved commands run as root. Every command is audited.' : 'The agent can make mistakes. Every command is audited.' }}</p>
         </div>
     </div>
 </x-ui.card>
+
+@can('admin')
+    <x-ui.modal name="unguarded" title="Start an unguarded session?" description="{{ $machine->name }} · {{ $machine->environment }}">
+        <div x-data="{ understood: false }" x-on:open-modal.window="understood = false" class="grid gap-4">
+            <ul class="grid gap-2.5 text-sm">
+                <li class="flex gap-2.5">@svg('lucide-key-round', 'mt-0.5 size-4 shrink-0 text-muted-foreground')<span>For <strong>{{ (int) config('sentinel.unguarded.lease_minutes') }} minutes</strong> the machine grants Sentinel root. The lease also ends by itself on the machine.</span></li>
+                <li class="flex gap-2.5">@svg('lucide-terminal', 'mt-0.5 size-4 shrink-0 text-muted-foreground')<span>The agent can propose <strong>any shell command</strong>. Nothing runs until you approve that exact command in the chat.</span></li>
+                <li class="flex gap-2.5">@svg('lucide-shield-off', 'mt-0.5 size-4 shrink-0 text-destructive')<span>Approved commands are <strong>not risk-checked</strong>: they can delete data or stop services.</span></li>
+                <li class="flex gap-2.5">@svg('lucide-bug', 'mt-0.5 size-4 shrink-0 text-destructive')<span>The agent reads text from the machine, which an attacker may have planted. Read every command before approving.</span></li>
+                <li class="flex gap-2.5">@svg('lucide-scroll-text', 'mt-0.5 size-4 shrink-0 text-muted-foreground')<span>The session and every command are recorded in the audit log.</span></li>
+            </ul>
+            <label class="flex cursor-pointer items-start gap-2.5 rounded-md border bg-muted/50 p-3 text-sm">
+                <input type="checkbox" x-model="understood" class="mt-0.5 size-4 shrink-0 accent-destructive">
+                <span>I understand, and I want to start an unguarded session on this {{ $machine->environment }} machine.</span>
+            </label>
+            <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <x-ui.button variant="outline" x-on:click="$dispatch('close-modal')">Cancel</x-ui.button>
+                <x-ui.button variant="destructive" x-bind:disabled="! understood" x-on:click="$wire.toggleUnguarded(); $dispatch('close-modal')">@svg('lucide-lock-open') Start unguarded session</x-ui.button>
+            </div>
+        </div>
+    </x-ui.modal>
+@endcan
+</div>

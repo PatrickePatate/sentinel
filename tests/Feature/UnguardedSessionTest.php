@@ -173,7 +173,7 @@ it('starts and ends the session from the chat for admins only', function () {
 
     $this->actingAs(User::factory()->admin()->create());
     $chat = Livewire::test(MachineChat::class, ['machine' => $machine])
-        ->assertSee('Start an unguarded session on')
+        ->assertSee('Start an unguarded session?')->assertSee('I understand')
         ->call('toggleUnguarded')
         ->assertSee('Read each one before approving');
 
