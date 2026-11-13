@@ -15,6 +15,7 @@ use App\Notifications\Notifier;
 use App\Notifications\ScanReportNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Str;
 use Laravel\Ai\Tools\Request;
 use Livewire\Livewire;
 use Spatie\Activitylog\Models\Activity;
@@ -73,23 +74,91 @@ it('opens, keeps and resolves findings across scans', function () {
     $second = reconciled($machine, ['ssh-password' => 'high']);
 
     expect($first->findings_diff['new'])->toHaveCount(2)
-        ->and($second->findings_diff)->toBe(['new' => [], 'escalated' => [], 'resolved' => [finding($machine, 'disk-full')->id], 'ongoing' => [finding($machine, 'ssh-password')->id]])
-        ->and(finding($machine, 'disk-full')->status)->toBe('resolved')
-        ->and(finding($machine, 'disk-full')->resolved_run_id)->toBe($second->id)
+        ->and($second->findings_diff)->toBe(['new' => [], 'escalated' => [], 'resolved' => [], 'ongoing' => [finding($machine, 'ssh-password')->id, finding($machine, 'disk-full')->id]])
+        ->and(finding($machine, 'disk-full')->status)->toBe('open')
+        ->and(finding($machine, 'disk-full')->misses)->toBe(1)
         ->and(finding($machine, 'ssh-password')->occurrences)->toBe(2)
         ->and(finding($machine, 'ssh-password')->first_seen_run_id)->toBe($first->id);
+
+    $third = reconciled($machine, ['ssh-password' => 'high']);
+
+    expect($third->findings_diff['resolved'])->toBe([finding($machine, 'disk-full')->id])
+        ->and(finding($machine, 'disk-full')->status)->toBe('resolved')
+        ->and(finding($machine, 'disk-full')->resolved_run_id)->toBe($third->id)
+        ->and(finding($machine, 'disk-full')->misses)->toBe(0);
 });
 
-it('treats a resolved finding that comes back as new', function () {
+it('resolves a finding only after two scans in a row leave it out', function () {
+    $machine = Machine::factory()->create();
+    reconciled($machine, ['disk-full' => 'medium']);
+
+    $missed = reconciled($machine, ['ssh-password' => 'high']);
+    expect($missed->findings_diff['resolved'])->toBe([])
+        ->and(finding($machine, 'disk-full')->status)->toBe('open');
+
+    // Reported again in between: the miss count starts over.
+    reconciled($machine, ['disk-full' => 'medium']);
+    expect(finding($machine, 'disk-full')->misses)->toBe(0);
+
+    reconciled($machine, ['ssh-password' => 'high']);
+    expect(finding($machine, 'disk-full')->status)->toBe('open')->and(finding($machine, 'disk-full')->misses)->toBe(1);
+
+    $run = reconciled($machine, ['ssh-password' => 'high']);
+    expect($run->findings_diff['resolved'])->toBe([finding($machine, 'disk-full')->id])
+        ->and(finding($machine, 'disk-full')->status)->toBe('resolved');
+});
+
+it('treats a resolved finding that comes back after the quiet window as new again', function () {
     $machine = Machine::factory()->create();
     reconciled($machine, ['disk-full' => 'medium']);
     reconciled($machine, [], 'none');
+    finding($machine, 'disk-full')->update(['notified_severity' => 'medium', 'last_notified_at' => now()]);
 
+    $this->travel(4)->days();
     $run = reconciled($machine, ['disk-full' => 'medium']);
 
     expect($run->findings_diff['new'])->toBe([finding($machine, 'disk-full')->id])
-        ->and(finding($machine, 'disk-full')->status)->toBe('open');
+        ->and(finding($machine, 'disk-full')->status)->toBe('open')
+        ->and(finding($machine, 'disk-full')->notified_severity)->toBeNull()
+        ->and(finding($machine, 'disk-full')->last_notified_at)->toBeNull();
 });
+
+it('keeps a finding that comes back within the quiet window in the same episode', function () {
+    $machine = Machine::factory()->create();
+    reconciled($machine, ['disk-full' => 'medium']);
+    reconciled($machine, [], 'none');
+    finding($machine, 'disk-full')->update(['notified_severity' => 'medium', 'last_notified_at' => now()]);
+
+    $this->travel(2)->days();
+    $run = reconciled($machine, ['disk-full' => 'medium']);
+
+    expect($run->findings_diff['new'])->toBe([])
+        ->and($run->findings_diff['ongoing'])->toBe([finding($machine, 'disk-full')->id])
+        ->and(finding($machine, 'disk-full')->status)->toBe('open')
+        ->and(finding($machine, 'disk-full')->notified_severity)->toBe('medium')
+        ->and(finding($machine, 'disk-full')->last_notified_at)->not->toBeNull();
+});
+
+it('keeps an accepted finding accepted even when it gets worse', function () {
+    $machine = Machine::factory()->create();
+    reconciled($machine, ['disk-full' => 'low']);
+    finding($machine, 'disk-full')->update(['status' => 'accepted']);
+
+    $run = reconciled($machine, ['disk-full' => 'high'], 'low');
+
+    expect(finding($machine, 'disk-full')->status)->toBe('accepted')
+        ->and(finding($machine, 'disk-full')->severity)->toBe('high')
+        ->and($run->findings_diff['escalated'])->toBe([])
+        ->and($run->findings_diff['ongoing'])->toBe([finding($machine, 'disk-full')->id]);
+});
+
+it('does not raise the verdict for acknowledged or accepted findings', function (string $status) {
+    $machine = Machine::factory()->create();
+    reconciled($machine, ['disk-full' => 'high']);
+    finding($machine, 'disk-full')->update(['status' => $status]);
+
+    expect(reconciled($machine, ['disk-full' => 'high'], 'low')->severity)->toBe('low');
+})->with(['acknowledged', 'accepted']);
 
 it('reopens an acknowledged or muted finding that got worse', function (string $status) {
     $machine = Machine::factory()->create();
@@ -115,6 +184,61 @@ it('keeps a muted finding muted until its date, then opens it again', function (
     reconciled($machine, ['disk-full' => 'medium']);
     expect(finding($machine, 'disk-full')->status)->toBe('open');
 });
+
+it('matches a renamed key to the finding it renames, keeping the stored key', function (string $renamed, string $known) {
+    $machine = Machine::factory()->create();
+    reconciled($machine, [$known => 'medium']);
+
+    $run = reconciled($machine, [$renamed => 'medium']);
+
+    expect(Finding::where('machine_id', $machine->id)->count())->toBe(1)
+        ->and($run->findings_diff['new'])->toBe([])
+        ->and($run->findings_diff['ongoing'])->toBe([finding($machine, $known)->id])
+        ->and(finding($machine, $known)->occurrences)->toBe(2)
+        ->and(finding($machine, $known)->title)->toBe("Title {$renamed}");
+})->with([
+    'host-swap-usage-rising' => ['host-swap-usage-rising', 'swap-usage-rising'],
+    'docker-dns-resolver-unreachable' => ['docker-dns-resolver-unreachable', 'docker-dns-upstream-unreachable'],
+    'api-new-hugoperez-bad-gateway' => ['api-new-hugoperez-bad-gateway', 'api-new-hugoperez-upstream-down'],
+]);
+
+it('does not match keys that only share a word', function (string $reported, string $known) {
+    $machine = Machine::factory()->create();
+    reconciled($machine, [$known => 'medium']);
+
+    $run = reconciled($machine, [$reported => 'medium']);
+
+    expect(Finding::where('machine_id', $machine->id)->count())->toBe(2)
+        ->and($run->findings_diff['new'])->toBe([finding($machine, $reported)->id]);
+})->with([
+    ['ssh-root-login-permitted', 'ssh-password-auth-enabled'],
+    ['hugoperez-http-503', 'api-new-hugoperez-bad-gateway'],
+]);
+
+it('lets a known finding be claimed by one renamed key only', function () {
+    $machine = Machine::factory()->create();
+    reconciled($machine, ['swap-usage-rising' => 'medium']);
+
+    $run = reconciled($machine, ['host-swap-usage-rising' => 'medium', 'swap-usage-rising-peak' => 'medium']);
+
+    expect(Finding::where('machine_id', $machine->id)->count())->toBe(2)
+        ->and($run->findings_diff['new'])->toHaveCount(1)
+        ->and($run->findings_diff['ongoing'])->toHaveCount(1);
+});
+
+it('matches a renamed key only to a finding resolved within the same-key window', function (int $days, int $findings) {
+    $machine = Machine::factory()->create();
+    reconciled($machine, ['swap-usage-rising' => 'medium']);
+    reconciled($machine, [], 'none');
+
+    $this->travel($days)->days();
+    reconciled($machine, ['host-swap-usage-rising' => 'medium']);
+
+    expect(Finding::where('machine_id', $machine->id)->count())->toBe($findings);
+})->with([
+    'recently resolved' => [5, 1],
+    'resolved long ago' => [15, 2],
+]);
 
 it('resolves nothing from a failed scan, a scan without verdict, or a scan of another profile', function () {
     $machine = Machine::factory()->create();
@@ -177,7 +301,10 @@ it('gives the agent the open findings of the machine, for this profile only', fu
 
     $instructions = (string) (new SysadminAgent($machine, $run, requiresVerdict: true))->instructions();
 
-    expect($instructions)->toContain('disk-full (medium)')->not->toContain('nginx-down');
+    // The other check's finding is only named as something not to report again.
+    expect($instructions)->toContain('disk-full (medium)')
+        ->and(Str::before($instructions, 'Already tracked by the other check'))->not->toContain('nginx-down')
+        ->and(Str::after($instructions, 'Already tracked by the other check'))->toContain('nginx-down');
 });
 
 it('does not notify a scan that only repeats known findings', function () {
@@ -208,6 +335,7 @@ it('always notifies high verdicts, even when nothing changed', function () {
 it('lists what changed in the notification', function () {
     $machine = Machine::factory()->create();
     reconciled($machine, ['disk-full' => 'medium']);
+    reconciled($machine, ['other-issue' => 'low']);
     $run = reconciled($machine, ['ssh-password' => 'high']);
     $channel = NotificationChannel::create(['name' => 'ops', 'type' => 'mail', 'settings' => ['email' => 'ops@example.com'], 'min_severity' => 'low']);
 
@@ -245,6 +373,7 @@ it('filters issues and hides resolved ones by default', function () {
     $machine = Machine::factory()->create();
     reconciled($machine, ['disk-full' => 'medium', 'ssh-password' => 'high']);
     reconciled($machine, ['ssh-password' => 'high']);
+    reconciled($machine, ['ssh-password' => 'high']);
 
     Livewire::test(Index::class)->assertSee('Title ssh-password')->assertDontSee('Title disk-full')
         ->set('status', 'resolved')->assertSee('Title disk-full')->assertDontSee('Title ssh-password')
@@ -260,6 +389,7 @@ it('shows what a scan changed on its page', function () {
     $this->actingAs(User::factory()->admin()->create());
     $machine = Machine::factory()->create();
     reconciled($machine, ['disk-full' => 'medium']);
+    reconciled($machine, ['other-issue' => 'low']);
     $run = reconciled($machine, ['ssh-password' => 'high']);
 
     $this->get(route('scans.show', $run))->assertOk()->assertSee('Changes since the last scan')->assertSee('Title ssh-password')->assertSee('Resolved');

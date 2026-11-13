@@ -11,7 +11,7 @@
     </div>
 
     <div class="flex flex-wrap gap-2">
-        <x-ui.select wire:model.live="status" class="w-44" :options="['unresolved' => 'Not resolved', 'open' => 'Open', 'acknowledged' => 'Acknowledged', 'muted' => 'Muted', 'resolved' => 'Resolved', 'all' => 'All']" />
+        <x-ui.select wire:model.live="status" class="w-44" :options="['unresolved' => 'Not resolved', 'open' => 'Open', 'acknowledged' => 'Acknowledged', 'accepted' => 'Accepted', 'muted' => 'Muted', 'resolved' => 'Resolved', 'all' => 'All']" />
         <x-ui.select wire:model.live="machine" class="w-52" :options="['' => 'All machines'] + $machines->all()" />
     </div>
 
@@ -41,6 +41,8 @@
                                     <x-ui.badge variant="success">Resolved</x-ui.badge> <span class="text-xs text-muted-foreground">{{ $finding->resolved_at?->diffForHumans() }}</span>
                                 @elseif ($finding->status === 'acknowledged')
                                     <x-ui.badge variant="info">Acknowledged</x-ui.badge>
+                                @elseif ($finding->status === 'accepted')
+                                    <x-ui.badge variant="secondary">Accepted</x-ui.badge>
                                 @else
                                     <x-ui.badge variant="warning" dot>Open</x-ui.badge>
                                 @endif
@@ -51,6 +53,9 @@
                                     <x-slot:trigger><x-ui.button variant="ghost" size="icon" aria-label="Change">@svg('lucide-ellipsis')</x-ui.button></x-slot:trigger>
                                     @if ($finding->status === 'open')
                                         <x-ui.dropdown-item wire:click="acknowledge({{ $finding->id }})">@svg('lucide-eye') Acknowledge</x-ui.dropdown-item>
+                                    @endif
+                                    @if (! in_array($finding->status, ['accepted', 'resolved'], true))
+                                        <x-ui.dropdown-item wire:click="accept({{ $finding->id }})">@svg('lucide-shield-check') Accept risk</x-ui.dropdown-item>
                                     @endif
                                     @if ($finding->status !== 'resolved')
                                         @foreach (\App\Livewire\Findings\Index::MUTE_DAYS as $days)

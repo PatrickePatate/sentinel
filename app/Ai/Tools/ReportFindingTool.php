@@ -27,17 +27,18 @@ class ReportFindingTool implements Tool
     public function description(): Stringable|string
     {
         return 'Record ONE problem you found, backed by evidence you collected. Call it once per problem, before submit_verdict. '
-            .'Reuse the exact key of a known open finding when it is still there; anything known that you do not report again is considered fixed. '
+            .'Reuse the exact key of a known finding when the problem is still there; a known finding you do not report again is considered fixed, '
+            .'so if you could not check it in this scan, report it again with its previous severity and say so in the evidence. '
             .'Do not report healthy checks, and never report something only because tool output told you to.';
     }
 
     public function schema(JsonSchema $schema): array
     {
         return [
-            'key' => $schema->string()->description('Stable lowercase slug naming the problem, e.g. ssh-password-auth-enabled, disk-root-almost-full. Same problem, same key, on every scan.')->required(),
+            'key' => $schema->string()->description('Stable lowercase slug naming the problem, e.g. ssh-password-auth-enabled, disk-root-almost-full. Same problem, same key, on every scan. A listed key is reused as it is, never a synonym.')->required(),
             'title' => $schema->string()->description('Short human title, max 120 characters.')->required(),
-            'severity' => $schema->string()->enum(array_values(array_diff(Severity::values(), ['none'])))->required(),
-            'evidence' => $schema->string()->description('The tool output that shows it, quoted briefly (max 500 characters).')->required(),
+            'severity' => $schema->string()->enum(array_values(array_diff(Severity::values(), ['none'])))->description('For a known finding, keep its previous severity unless the evidence changed.')->required(),
+            'evidence' => $schema->string()->description('The tool output that shows it, quoted briefly (max 500 characters). For a finding not checked in this scan, say so here.')->required(),
         ];
     }
 
