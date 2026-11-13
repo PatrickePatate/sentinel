@@ -4,10 +4,12 @@ use App\Ai\Agents\SysadminAgent;
 use App\Ai\ScanRunner;
 use App\Ai\Severity;
 use App\Ai\Tools\SubmitVerdictTool;
+use App\Findings\FindingTracker;
 use App\Jobs\RunScan;
 use App\Livewire\Channels\Index;
 use App\Livewire\Machines\Form;
 use App\Models\AgentRun;
+use App\Models\Finding;
 use App\Models\Machine;
 use App\Models\NotificationChannel;
 use App\Models\PendingAction;
@@ -47,6 +49,20 @@ function telegramChannel(array $settings = [], array $extra = []): NotificationC
 function finishedRun(?string $severity, string $status = 'completed'): AgentRun
 {
     return AgentRun::create(['machine_id' => Machine::factory()->create()->id, 'provider' => 'x', 'objective' => 'o', 'status' => $status, 'severity' => $severity, 'summary' => 's', 'report' => 'r', 'trigger' => 'scheduled']);
+}
+
+/** A completed scan that reported the given findings (key => severity), reconciled the way a real scan is. */
+function scanWith(Machine $machine, array $reported, string $trigger = 'scheduled'): AgentRun
+{
+    $verdict = collect($reported)->map(fn ($severity) => Severity::from($severity))->sortByDesc(fn (Severity $s) => $s->rank())->first()?->value ?? 'none';
+    $run = AgentRun::create([
+        'machine_id' => $machine->id, 'provider' => 'x', 'objective' => 'audit', 'trigger' => $trigger, 'profile' => 'audit',
+        'status' => 'completed', 'severity' => $verdict, 'summary' => 's', 'report' => 'r',
+        'reported_findings' => collect($reported)->map(fn ($severity, $key) => ['title' => "Title {$key}", 'severity' => $severity, 'evidence' => 'e'])->all(),
+    ]);
+    app(FindingTracker::class)->reconcile($run);
+
+    return $run->fresh();
 }
 
 function pendingFor(Machine $machine): PendingAction
@@ -119,6 +135,172 @@ it('does not tell about scans on channels that only want approvals', function ()
     app(Notifier::class)->scanFinished(finishedRun('critical'));
 
     Notification::assertNotSentTo($channel, ScanReportNotification::class);
+});
+
+it('does not repeat an unchanged high finding', function () {
+    Notification::fake();
+    $channel = mailChannel('medium');
+    $machine = Machine::factory()->create();
+
+    app(Notifier::class)->scanFinished(scanWith($machine, ['ssh-root' => 'high']));
+    app(Notifier::class)->scanFinished(scanWith($machine, ['ssh-root' => 'high']));
+    app(Notifier::class)->scanFinished(scanWith($machine, []));
+
+    Notification::assertSentToTimes($channel, ScanReportNotification::class, 1);
+});
+
+it('reminds about a serious open finding once remind_days have passed, and only then', function () {
+    Notification::fake();
+    $channel = mailChannel('medium');
+    $machine = Machine::factory()->create();
+    config(['sentinel.notifications.remind_days' => 14]);
+
+    app(Notifier::class)->scanFinished(scanWith($machine, ['ssh-root' => 'high']));
+    $this->travel(13)->days();
+    app(Notifier::class)->scanFinished(scanWith($machine, ['ssh-root' => 'high']));
+    Notification::assertSentToTimes($channel, ScanReportNotification::class, 1);
+
+    $this->travel(2)->days();
+    app(Notifier::class)->scanFinished(scanWith($machine, ['ssh-root' => 'high']));
+
+    Notification::assertSentToTimes($channel, ScanReportNotification::class, 2);
+    Notification::assertSentTo($channel, ScanReportNotification::class, fn (ScanReportNotification $n) => $n->newsIds === [] && $n->reminderIds !== []);
+    expect(Activity::where('event', 'notification_sent')->latest('id')->first()->properties['reason'])->toBe('reminder');
+});
+
+it('never reminds when remind_days is 0', function () {
+    Notification::fake();
+    $channel = mailChannel('medium');
+    $machine = Machine::factory()->create();
+    config(['sentinel.notifications.remind_days' => 0]);
+
+    app(Notifier::class)->scanFinished(scanWith($machine, ['ssh-root' => 'high']));
+    $this->travel(60)->days();
+    app(Notifier::class)->scanFinished(scanWith($machine, ['ssh-root' => 'high']));
+
+    Notification::assertSentToTimes($channel, ScanReportNotification::class, 1);
+});
+
+it('never announces an acknowledged or accepted finding, not even as a reminder', function () {
+    Notification::fake();
+    $channel = mailChannel('medium');
+    $machine = Machine::factory()->create();
+
+    // Reported by a scan nobody was told about, then looked at and accepted or acknowledged.
+    scanWith($machine, ['ssh-root' => 'high', 'ufw-off' => 'high']);
+    Finding::where('machine_id', $machine->id)->where('key', 'ssh-root')->update(['status' => 'acknowledged']);
+    Finding::where('machine_id', $machine->id)->where('key', 'ufw-off')->update(['status' => 'accepted']);
+
+    app(Notifier::class)->scanFinished(scanWith($machine, ['ssh-root' => 'high', 'ufw-off' => 'high']));
+    $this->travel(30)->days();
+    app(Notifier::class)->scanFinished(scanWith($machine, ['ssh-root' => 'high', 'ufw-off' => 'high']));
+
+    Notification::assertNothingSent();
+});
+
+it('does not announce again a finding that went down and back up to the level already announced', function () {
+    Notification::fake();
+    $channel = mailChannel('medium');
+    $machine = Machine::factory()->create();
+
+    app(Notifier::class)->scanFinished(scanWith($machine, ['ssh-root' => 'high']));
+    app(Notifier::class)->scanFinished(scanWith($machine, ['ssh-root' => 'medium']));
+    app(Notifier::class)->scanFinished(scanWith($machine, ['ssh-root' => 'high']));
+
+    Notification::assertSentToTimes($channel, ScanReportNotification::class, 1);
+});
+
+it('announces a finding again only when it gets worse than what was announced', function () {
+    Notification::fake();
+    $channel = mailChannel('medium');
+    $machine = Machine::factory()->create();
+
+    app(Notifier::class)->scanFinished(scanWith($machine, ['ssh-root' => 'medium']));
+    app(Notifier::class)->scanFinished(scanWith($machine, ['ssh-root' => 'high']));
+
+    Notification::assertSentToTimes($channel, ScanReportNotification::class, 2);
+    Notification::assertSentTo($channel, ScanReportNotification::class, fn (ScanReportNotification $n) => $n->newsIds !== [] && $n->severity === Severity::High);
+    expect(Activity::where('event', 'notification_sent')->latest('id')->first()->properties['reason'])->toBe('worse');
+});
+
+it('does not send a low new finding to a channel whose minimum is medium', function () {
+    Notification::fake();
+    $medium = mailChannel('medium');
+    $everything = mailChannel('low', ['name' => 'all mail', 'settings' => ['email' => 'all@example.com']]);
+    $machine = Machine::factory()->create();
+
+    app(Notifier::class)->scanFinished(scanWith($machine, ['ufw-logging' => 'low']));
+
+    Notification::assertSentTo($everything, ScanReportNotification::class);
+    Notification::assertNotSentTo($medium, ScanReportNotification::class);
+    expect(Finding::where('key', 'ufw-logging')->value('notified_severity'))->toBe('low');
+});
+
+it('sends nothing and marks nothing when no channel takes the news', function () {
+    Notification::fake();
+    mailChannel('critical');
+    $machine = Machine::factory()->create();
+
+    app(Notifier::class)->scanFinished(scanWith($machine, ['ssh-root' => 'high']));
+
+    Notification::assertNothingSent();
+    expect(Finding::where('key', 'ssh-root')->value('notified_severity'))->toBeNull()
+        ->and(Activity::where('event', 'notification_sent')->count())->toBe(0);
+});
+
+it('lets a scheduled scan that escalates stay silent, so the escalation run sends the one message', function () {
+    Notification::fake();
+    Queue::fake();
+    $channel = mailChannel('medium');
+    $machine = Machine::factory()->create();
+    config([
+        'sentinel.agent.provider' => 'openai', 'sentinel.agent.model' => 'strong-model',
+        'sentinel.agent.scheduled_provider' => 'openai', 'sentinel.agent.scheduled_model' => 'cheap-model',
+        'sentinel.agent.escalate_severity' => 'high', 'sentinel.scheduling.skip_unchanged.enabled' => false,
+    ]);
+
+    $runner = Mockery::mock(ScanRunner::class)->makePartial();
+    $runner->shouldReceive('run')->once()->andReturnUsing(fn () => scanWith($machine, ['ssh-root' => 'high'], 'scheduled'));
+    app()->instance(ScanRunner::class, $runner);
+
+    (new RunScan($machine->id, 'audit', null, 'scheduled', null, 'audit'))->handle($runner);
+
+    Queue::assertPushed(RunScan::class, fn (RunScan $job) => $job->trigger === 'escalation');
+    Notification::assertNothingSent();
+
+    // The escalation run confirms the problem: it is new to everyone, so exactly one message goes out.
+    app(Notifier::class)->scanFinished(scanWith($machine, ['ssh-root' => 'high'], 'escalation'));
+
+    Notification::assertSentToTimes($channel, ScanReportNotification::class, 1);
+});
+
+it('marks the findings it announced and records the notification in the audit trail', function () {
+    Notification::fake();
+    mailChannel('medium');
+    $machine = Machine::factory()->create();
+
+    app(Notifier::class)->scanFinished(scanWith($machine, ['ssh-root' => 'high']));
+
+    $finding = Finding::where('key', 'ssh-root')->sole();
+    expect($finding->notified_severity)->toBe('high')->and($finding->last_notified_at)->not->toBeNull();
+
+    $audit = Activity::where('event', 'notification_sent')->sole();
+    expect($audit->properties['reason'])->toBe('new')
+        ->and($audit->properties['channels'])->toBe(1)
+        ->and($audit->properties['finding_ids'])->toBe([$finding->id])
+        ->and($audit->description)->toBe('High finding on '.$machine->name);
+});
+
+it('lists a reminder in the message, and only news under New', function () {
+    $channel = mailChannel('medium');
+    $machine = Machine::factory()->create();
+    $run = scanWith($machine, ['ssh-root' => 'high', 'ufw-off' => 'low']);
+    $id = Finding::where('key', 'ssh-root')->value('id');
+
+    $lines = (new ScanReportNotification($run->load('machine'), Severity::High, false, [], [$id]))->toMail($channel)->introLines;
+
+    expect($lines)->toContain('Reminder: Title ssh-root (high)')
+        ->and(collect($lines)->filter(fn ($line) => str_starts_with($line, 'New:')))->toBeEmpty();
 });
 
 it('sends approval requests with approve and reject buttons and escapes everything', function () {

@@ -4,10 +4,12 @@ namespace App\Notifications;
 
 use App\Ai\Severity;
 use App\Models\AgentRun;
+use App\Models\Finding;
 use App\Models\Machine;
 use App\Models\NotificationChannel;
 use App\Models\PendingAction;
 use App\Ssh\AuditTrail;
+use Illuminate\Support\Collection;
 use Throwable;
 
 /**
@@ -20,37 +22,74 @@ class Notifier
     public function scanFinished(AgentRun $run): void
     {
         $failed = $run->status === 'failed';
-        // A scan with no verdict is treated as medium: fail towards telling someone, never towards silence.
-        $severity = $failed ? Severity::High : (Severity::tryFrom((string) $run->severity) ?? Severity::Medium);
+        // A completed scan with a diff is judged by what is news; a failed or diff-less one keeps the verdict rule.
+        $byChange = ! $failed && config('sentinel.notifications.only_changes', true) && is_array($run->findings_diff);
+        [$news, $reminders] = $byChange ? $this->newsAndReminders($run) : [collect(), collect()];
 
-        // A scheduled web server check that leaves a component down reaches every scan channel, whatever its minimum severity.
-        $urgent = $run->profile === 'webserver' && in_array($run->trigger, ['scheduled', 'site_down'], true) && $severity->atLeast(Severity::High);
-
-        if (! $failed && ! $urgent && $this->nothingChanged($run, $severity)) {
+        if ($byChange && $news->isEmpty() && $reminders->isEmpty()) {
             return;
         }
+
+        // A scan with no verdict is treated as medium: fail towards telling someone, never towards silence.
+        $severity = match (true) {
+            $failed => Severity::High,
+            $byChange => $news->concat($reminders)->reduce(fn (Severity $worst, Finding $f) => $f->severityLevel()->rank() > $worst->rank() ? $f->severityLevel() : $worst, Severity::None),
+            default => Severity::tryFrom((string) $run->severity) ?? Severity::Medium,
+        };
+
+        // A scheduled web server check that leaves a component down reaches every scan channel, whatever its minimum severity.
+        $urgent = $run->profile === 'webserver' && in_array($run->trigger, ['scheduled', 'site_down', 'escalation'], true) && $severity->atLeast(Severity::High);
 
         if ($this->quiet($run->machine, 'scan report', $run)) {
             return;
         }
 
-        $this->dispatch($run, fn () => NotificationChannel::where('enabled', true)->where('notify_scans', true)->get()
-            ->filter(fn (NotificationChannel $c) => $urgent || $severity->atLeast($c->minSeverity())),
-            new ScanReportNotification($run, $severity, $urgent));
+        $channels = NotificationChannel::where('enabled', true)->where('notify_scans', true)->get()
+            ->filter(fn (NotificationChannel $c) => $urgent || $severity->atLeast($c->minSeverity()));
+        $ids = fn (Collection $findings): array => $findings->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $notification = new ScanReportNotification($run, $severity, $urgent, $byChange ? $ids($news) : null, $ids($reminders));
+
+        $sent = $this->dispatch($run, fn () => $channels, $notification);
+
+        // Nobody was reached: the findings stay unannounced, so the next scan tries again.
+        if ($sent === 0) {
+            return;
+        }
+
+        $findings = $news->concat($reminders);
+        // Why it was sent, most urgent first: a new problem beats a worse one, which beats a reminder.
+        $reason = match (true) {
+            $failed => 'failed',
+            ! $byChange => 'verdict',
+            $news->contains(fn (Finding $f) => $f->notifiedLevel() === null) => 'new',
+            $news->isNotEmpty() => 'worse',
+            default => 'reminder',
+        };
+
+        $findings->each(fn (Finding $f) => $f->update(['notified_severity' => $f->severity, 'last_notified_at' => now()]));
+        $this->audit->record($run->machine, $run, 'notification_sent', $notification->headline(), ['reason' => $reason, 'finding_ids' => $ids($findings), 'channels' => $sent]);
     }
 
     /**
-     * A scan that only confirms what earlier scans already reported is not worth a message: nothing new, nothing worse.
-     * High and critical verdicts are always sent, so an ongoing serious problem keeps being reported.
+     * What this scan has to tell: findings nobody was told about, or told about at a lower severity (news), and serious
+     * open ones last announced long ago (reminders). Acknowledged, accepted and muted findings never qualify.
+     *
+     * @return array{0: Collection<int, Finding>, 1: Collection<int, Finding>}
      */
-    private function nothingChanged(AgentRun $run, Severity $severity): bool
+    private function newsAndReminders(AgentRun $run): array
     {
-        $diff = $run->findings_diff;
+        $open = Finding::where('machine_id', $run->machine_id)->where('profile', $run->profile ?? 'audit')
+            ->where('last_seen_run_id', $run->id)->get()->filter(fn (Finding $f) => $f->needsAttention());
 
-        return config('sentinel.notifications.only_changes', true)
-            && is_array($diff) && $diff['ongoing'] !== []
-            && $diff['new'] === [] && $diff['escalated'] === []
-            && ! $severity->atLeast(Severity::High);
+        // Worse than what was already announced: a severity that went down and back up to the same level is not news.
+        $news = $open->filter(fn (Finding $f) => $f->notifiedLevel() === null || $f->severityLevel()->rank() > $f->notifiedLevel()->rank())->values();
+
+        $days = (int) config('sentinel.notifications.remind_days', 14);
+        $reminders = $days > 0 ? $open->reject(fn (Finding $f) => $news->contains('id', $f->id))
+            ->filter(fn (Finding $f) => $f->severityLevel()->atLeast(Severity::High) && $f->last_notified_at?->lt(now()->subDays($days)))
+            ->values() : collect();
+
+        return [$news, $reminders];
     }
 
     /** Planned work or a maintenance window: the message is not sent, only logged. Approval requests are never muted. */
@@ -79,7 +118,11 @@ class Notifier
             return;
         }
 
-        $this->dispatch(null, fn () => NotificationChannel::where('enabled', true)->where('notify_scans', true)->get(), new MachineAlertNotification($machine, $title, $body, $urgent), $machine);
+        $sent = $this->dispatch(null, fn () => NotificationChannel::where('enabled', true)->where('notify_scans', true)->get(), new MachineAlertNotification($machine, $title, $body, $urgent), $machine);
+
+        if ($sent > 0) {
+            $this->audit->record($machine, null, 'notification_sent', $title, ['reason' => 'alert', 'channels' => $sent]);
+        }
     }
 
     public function approvalNeeded(PendingAction $pending): void
@@ -88,14 +131,17 @@ class Notifier
             new ActionApprovalNotification($pending), $pending->machine);
     }
 
-    private function dispatch(?AgentRun $run, callable $channels, $notification, mixed $machine = null): void
+    /** @return int How many channels accepted the notification. */
+    private function dispatch(?AgentRun $run, callable $channels, $notification, mixed $machine = null): int
     {
         $machine ??= $run?->machine;
+        $sent = 0;
 
         try {
             foreach ($channels() as $channel) {
                 try {
                     $channel->notify($notification);
+                    $sent++;
                 } catch (Throwable $e) {
                     $this->failed($machine, $run, $channel, $e);
                 }
@@ -103,6 +149,8 @@ class Notifier
         } catch (Throwable $e) {
             report($e);
         }
+
+        return $sent;
     }
 
     private function failed($machine, ?AgentRun $run, NotificationChannel $channel, Throwable $e): void

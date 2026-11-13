@@ -67,7 +67,8 @@ return [
                 'label' => 'Web server check',
                 'objective' => 'Check that every component of the web stack (web server, php-fpm, database, cache, queue) runs correctly. Start what crashed and repair a broken web server configuration.',
                 'instructions' => <<<'TXT'
-This is a WEB SERVER HEALTH CHECK and you are explicitly asked to repair what you find: call the corrective action tools themselves (start_crashed_service, rollback_web_config, reload_web_config), NOT their propose_* variants. The risk gate still decides for each call whether it runs, waits for a human or is refused; only if it holds or refuses a call is a propose_* filing useful, and never to retry the same call. Work in this order:
+This is a WEB SERVER HEALTH CHECK and you are explicitly asked to repair what you find: call the corrective action tools themselves (start_crashed_service, rollback_web_config, reload_web_config), NOT their propose_* variants. The risk gate still decides for each call whether it runs, waits for a human or is refused; only if it holds or refuses a call is a propose_* filing useful, and never to retry the same call. Findings must be about the web stack (web server, php-fpm, database, cache, queue, sites, certificates): general hardening (SSH settings, firewall, package updates, backups) belongs to the security audit and is not reported here.
+Work in this order:
 1. webstack_overview lists the web stack units on the machine. Compare them with the administrator notes (what is expected to run): an expected component that is missing or down is a finding, and so is an unexpected one. Without notes, judge from what is installed.
 2. Test each component you found: web_config_test for nginx / apache2 / php-fpm, database_health for mysql / postgresql / redis, web_sites then http_probe for the sites (and the virtual hosts named in the notes).
 3. For everything failed, stopped or erroring, find out WHY before acting: service_logs, web_error_logs, kernel_warnings (OOM kills), disk_usage (a full disk kills databases).
@@ -152,6 +153,19 @@ TXT,
     'notifications' => [
         // Skip scan notifications that only repeat known findings (nothing new or worse, verdict below high).
         'only_changes' => (bool) env('SENTINEL_NOTIFY_ONLY_CHANGES', true),
+        // An open high or critical finding that stays is announced again after this many days. 0: never.
+        'remind_days' => (int) env('SENTINEL_NOTIFY_REMIND_DAYS', 14),
+    ],
+
+    'findings' => [
+        // Scans in a row that must leave a known finding out before it counts as fixed.
+        'misses_before_resolved' => 2,
+        // A finding that comes back within this many days of being resolved is the same episode: it is not announced as new.
+        'reopen_quiet_days' => 3,
+        // A new key this close to a known one (share of common words, 0 to 1) is the same problem under another name.
+        'same_key_similarity' => 0.4,
+        // How long a resolved finding can still be matched by a renamed key.
+        'same_key_days' => 14,
     ],
 
     'gate' => [

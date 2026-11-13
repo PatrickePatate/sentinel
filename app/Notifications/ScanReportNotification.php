@@ -17,14 +17,18 @@ class ScanReportNotification extends Notification implements ShouldQueue
 {
     use Queueable;
 
-    public function __construct(public AgentRun $run, public Severity $severity, public bool $urgent = false) {}
+    /**
+     * @param  list<int>|null  $newsIds  The findings this message announces as new or worse; null lists everything the diff holds.
+     * @param  list<int>  $reminderIds  Serious findings repeated as a reminder.
+     */
+    public function __construct(public AgentRun $run, public Severity $severity, public bool $urgent = false, public ?array $newsIds = null, public array $reminderIds = []) {}
 
     public function via(NotificationChannel $notifiable): array
     {
         return [$notifiable->type === 'telegram' ? TelegramChannel::class : 'mail'];
     }
 
-    private function headline(): string
+    public function headline(): string
     {
         $machine = $this->run->machine;
         $prefix = $this->urgent ? 'URGENT: ' : '';
@@ -45,17 +49,22 @@ class ScanReportNotification extends Notification implements ShouldQueue
     private function changes(): array
     {
         $diff = $this->run->findings_diff ?? [];
-        $findings = Finding::whereIn('id', collect($diff)->flatten()->all())->get()->keyBy('id');
+        $findings = Finding::whereIn('id', collect($diff)->flatten()->merge($this->reminderIds)->all())->get()->keyBy('id');
         $lines = [];
 
-        foreach (['new' => 'New', 'escalated' => 'Worse', 'resolved' => 'Resolved'] as $kind => $label) {
-            $titles = collect($diff[$kind] ?? [])->map(fn ($id) => $findings->get($id))->filter()
-                ->map(fn (Finding $f) => "{$f->title} ({$f->severity})");
-
+        // Only news counts as new or worse: an old finding that is still open is not announced again.
+        $listed = fn (string $kind) => collect($diff[$kind] ?? [])->filter(fn ($id) => $kind === 'resolved' || $this->newsIds === null || in_array((int) $id, $this->newsIds, true));
+        $titlesOf = fn ($ids) => collect($ids)->map(fn ($id) => $findings->get($id))->filter()->map(fn (Finding $f) => "{$f->title} ({$f->severity})");
+        $line = function (string $label, $titles) use (&$lines) {
             if ($titles->isNotEmpty()) {
                 $lines[] = "{$label}: ".$titles->take(5)->implode('; ').($titles->count() > 5 ? ' and '.($titles->count() - 5).' more' : '');
             }
-        }
+        };
+
+        $line('New', $titlesOf($listed('new')));
+        $line('Worse', $titlesOf($listed('escalated')));
+        $line('Reminder', $titlesOf($this->reminderIds));
+        $line('Resolved', $titlesOf($listed('resolved')));
 
         if ($ongoing = count($diff['ongoing'] ?? [])) {
             $lines[] = "Still open: {$ongoing}";

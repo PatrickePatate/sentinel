@@ -41,6 +41,13 @@ class Index extends Component
         $this->change($id, ['status' => 'acknowledged', 'muted_until' => null], 'finding_acknowledged');
     }
 
+    /** A risk someone decided to live with: it stays listed but never notifies again. */
+    public function accept(int $id): void
+    {
+        $this->allow('approve');
+        $this->change($id, ['status' => 'accepted', 'muted_until' => null], 'finding_accepted');
+    }
+
     public function mute(int $id, int $days): void
     {
         $this->allow('approve');

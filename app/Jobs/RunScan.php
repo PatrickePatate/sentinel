@@ -59,8 +59,16 @@ class RunScan implements ShouldQueue
             $run->update(['state_fingerprint' => $fingerprint]);
         }
 
-        app(Notifier::class)->scanFinished($run->load('machine'));
-        $this->escalate($run, $runner);
+        $run->load('machine');
+
+        // The escalation run tells about the problem once, with its own verdict: the scheduled one stays silent.
+        if ($this->willEscalate($run)) {
+            $this->escalate($run, $runner);
+
+            return;
+        }
+
+        app(Notifier::class)->scanFinished($run);
     }
 
     /** Only scheduled audits hash the machine state: a human asking for a scan always gets the AI. */
@@ -110,21 +118,27 @@ class RunScan implements ShouldQueue
      */
     private function escalate(AgentRun $run, ScanRunner $runner): void
     {
-        $threshold = Severity::tryFrom((string) config('sentinel.agent.escalate_severity'));
-        $severity = Severity::tryFrom((string) $run->severity);
-        $cheaper = config('sentinel.agent.scheduled_provider') !== null
-            && [config('sentinel.agent.scheduled_provider'), config('sentinel.agent.scheduled_model')] !== [config('sentinel.agent.provider'), config('sentinel.agent.model')];
-
-        if ($this->trigger !== 'scheduled' || ! $threshold || ! $severity || ! $cheaper || $run->status !== 'completed' || ! $severity->atLeast($threshold)) {
+        if (! $this->willEscalate($run)) {
             return;
         }
 
         // Its summary is left out on purpose: model text, possibly steered by what it read, must not become the objective
         // the risk gate checks actions against.
-        $objective = "Run a security and health audit. Scan #{$run->id}, made by a smaller model, reported a {$severity->value} problem: "
+        $objective = "Run a security and health audit. Scan #{$run->id}, made by a smaller model, reported a {$run->severity} problem: "
             .'confirm it or refute it with your own evidence.';
         $escalation = $runner->queue($run->machine, $objective, 'escalation', $this->profile);
         self::dispatch($run->machine_id, $objective, null, 'escalation', $escalation->id, $this->profile);
+    }
+
+    /** Whether a finished run gets an escalation run: a scheduled serious verdict, checked again by the main model. */
+    private function willEscalate(AgentRun $run): bool
+    {
+        $threshold = Severity::tryFrom((string) config('sentinel.agent.escalate_severity'));
+        $severity = Severity::tryFrom((string) $run->severity);
+        $cheaper = config('sentinel.agent.scheduled_provider') !== null
+            && [config('sentinel.agent.scheduled_provider'), config('sentinel.agent.scheduled_model')] !== [config('sentinel.agent.provider'), config('sentinel.agent.model')];
+
+        return $this->trigger === 'scheduled' && $threshold && $severity && $cheaper && $run->status === 'completed' && $severity->atLeast($threshold);
     }
 
     /**
